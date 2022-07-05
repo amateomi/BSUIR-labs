@@ -1,0 +1,92 @@
+@startuml
+class Cover {
+-title_: std::string
++Cover()
++Cover(title: std::string)
++~Cover()
++GetTitle(): std::string
++SetTitle(title: std::string)
+}
+
+enum Binding::Type {
+HARD
+SOFT
+}
+
+class Binding {
+-type_: Type
++Binding()
++Binding(type: Type)
++~Binding()
++GetType(): Type
++SetType(type: Type)
+}
+
+class Author {
+-full_name_: std::string
++Author()
++Author(full_name: std::string)
++~Author()
++GetFullName(): std::string
++SetFullName(std::string)
+}
+
+class Page {
+-number_: int
+-text_: std::string
++Page()
++Page(number: int, text: std::string)
++~Page()
++GetNumber(): int
++SetNumber(number: int)
++GetText(): std::string
++SetText(text: std::string)
+}
+
+class Book {
+#pages_: std::vector<Page>
+#cover_: Cover
+#binding_: Binding
+#author_: std::shared_ptr<Author>
++Book()
++Book(pages: std::vector<Page>, cover: Cover, binding: Binding, author: std::shared_ptr<Author>)
++~Book()
++GetPages(): std::vector<Page>
++SetPages(pages: std::vector<Page>)
++GetCover(): Cover
++SetCover(cover: Cover)
++GetBinding(): Binding
++SetBinding(binding: Binding)
++GetAuthor(): std::shared_ptr<Author>
++SetAuthor(author: std::shared_ptr<Author>)
+}
+
+class Publisher {
+-title_: std::string
++Publisher()
++Publisher(title: std::string)
++~Publisher()
++GetTitle(): std::string
++SetTitle(title: std::string)
+}
+
+class PrintEdition {
+-price_: int
+-publisher_: std::shared_ptr<Publisher>
++PrintEdition()
++PrintEdition(pages: std::vector<Page>, cover: Cover, binding: Binding, author: std::shared_ptr<Author>, price: int, publisher: std::shared_ptr<Publisher>)
++~PrintEdition()
++GetPrice(): int
++SetPrice(price: int)
++GetPublisher(): std::shared_ptr<Publisher>
++SetPublisher(publisher: std::shared_ptr<Publisher>)
+}
+
+Book *-- Page
+Book *-- Cover
+Book *-- Binding
+Book o-- Author
+PrintEdition o-- Publisher
+Book <|-- PrintEdition
+
+@enduml

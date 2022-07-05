@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Calculate</title>
+</head>
+<body>
+
+<form th:action="@{/calculate}" method="get">
+    <label for="x1">x1:</label>
+    <input type="number" step="any" name="x1" id="x1">
+
+    <label for="y1">y1:</label>
+    <input type="number" step="any" name="y1" id="y1">
+
+    <br><br>
+
+    <label for="x2">x2:</label>
+    <input type="number" step="any" name="x2" id="x2">
+
+    <label for="y2">y2:</label>
+    <input type="number" step="any" name="y2" id="y2">
+
+    <br><br>
+
+    <input type="submit" value="Submit">
+    <input type="reset" value="Reset">
+</form>
+
+</body>
+</html>

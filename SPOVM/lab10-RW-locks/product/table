@@ -1,0 +1,13 @@
+HEADER
+seed 0000000108
+amount 0000000007
+
+TABLE
+ID         NAME             CODE       AMOUNT     RESERVED
+101        apple            1          1          1         
+107        new              4          4          4         
+103        car              3          3          3         
+104        arrow            5          5          5         
+105        key              7          7          7         
+106        key              6          6          6         
+108        cup              322        10         11        
