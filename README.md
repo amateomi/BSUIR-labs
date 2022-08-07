@@ -8,7 +8,7 @@
 #### 📚 4 семестр
 
 - [СПОВМ - Системное программное обеспечение вычислительных машин <br>
-  <code>Linux</code> <code>Parallel Programming</code> <code>IPC</code>](SPOVM)
+  <code>Linux</code> <code>Concurrency</code> <code>IPC</code>](SPOVM)
 
 - [КПиЯП - Конструирование программ и языки программирования <br>
   <code>Assembly</code> <code>NASM</code>](KPiYAP-Assembly)
