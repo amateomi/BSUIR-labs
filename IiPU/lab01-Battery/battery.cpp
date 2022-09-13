@@ -1,5 +1,6 @@
 #include <unistd.h>
 
+#include <atomic>
 #include <chrono>
 #include <fstream>
 #include <iomanip>
@@ -18,9 +19,9 @@ string makeRed(const string& message)
     return "\033[1;31m" + message + "\033[0m";
 }
 
-const string batteryFilepath { "/sys/class/power_supply/BAT0/" };
-const string powerModePath { "/sys/firmware/acpi/platform_profile" };
-const string powerState { "/sys/power/state" };
+const auto batteryFilepath { "/sys/class/power_supply/BAT0/"s };
+const auto powerModePath { "/sys/firmware/acpi/platform_profile"s };
+const auto powerState { "/sys/power/state"s };
 
 atomic<bool> didEnterOption { false };
 
