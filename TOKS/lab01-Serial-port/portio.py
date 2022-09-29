@@ -1,7 +1,8 @@
 import serial
 
-WRITE_MESSAGE = """
-Enter option:
+import stuffing
+
+WRITE_MESSAGE = """Enter option:
 w) Write message
 c) Change baudrate
 >"""
@@ -11,8 +12,6 @@ for i, x in enumerate(serial.Serial.BAUDRATES):
     BAUDRATES_TO_PRINT.append(f"{i}) - {x}")
     if i % 2 == 0:
         BAUDRATES_TO_PRINT[i] += "\t"
-        if i < 15:
-            BAUDRATES_TO_PRINT[i] += "\t"
         if i == 0:
             BAUDRATES_TO_PRINT[i] += "\t"
     else:
@@ -26,7 +25,8 @@ def read(port_name: str):
 
         while True:
             message = port.readline().decode()
-            print(f"Message: {message}", flush=True)
+            message = stuffing.decode_message(message)
+            print(f"Decoded message: {message}", flush=True)
 
 
 def write(port_name: str):
@@ -39,15 +39,21 @@ def write(port_name: str):
             match option:
                 case "w":
                     message = input("Enter message: ") + "\n"
+                    message = stuffing.encode_message(message)
+                    print(f"Encoded message: {message}")
                     port.write(message.encode())
+
                 case "c":
                     option = input(BAUDRATES_TO_PRINT + "Enter option: ")
                     try:
                         option = int(option)
+                        if option < 0:
+                            raise IndexError
                         rate = serial.Serial.BAUDRATES[option]
                         port.baudrate = rate
                         print(f"New port baud rate is {port.baudrate}")
                     except (ValueError, IndexError):
                         print("Invalid index number")
+
                 case _:
                     print("Invalid option")
