@@ -8,28 +8,28 @@
 #### 📚 4 семестр
 
 - [СПОВМ - Системное программное обеспечение вычислительных машин <br>
-  <code>Linux</code> <code>Concurrency</code> <code>IPC</code>](SPOVM)
+  `Linux` `Concurrency` `IPC`](SPOVM)
 
 - [КПиЯП - Конструирование программ и языки программирования <br>
-  <code>Assembly</code> <code>NASM</code>](KPiYAP-Assembly)
+  `Assembly` `NASM`](KPiYAP-Assembly)
 
 - [АПК - Архитектура персональных компьютеров <br>
-  <code>Computer Architecture</code> <code>DOS</code>](APK)
+  `Computer Architecture` `DOS`](APK)
 
 - [КПП - Кросс-платформенное программирование <br>
-  <code>Java</code> <code>Spring</code>](KPP)
+  `Java` `Spring`](KPP)
 
 #### 📚 3 семестр
 
 - [КПиЯП - Конструирование программ и языки программирования <br>
-  <code>C++</code> <code>OOP</code>](KPiYAP-Cpp)
+  `C++` `OOP`](KPiYAP-Cpp)
 
 #### 📚 2 семестр
 
 - [ОАиП - Основы алгоритмизации и программирования <br>
-  <code>C</code> <code>Data Structures</code>](OAiP-Data-Structures)
+  `C` `Data Structures`](OAiP-Data-Structures)
 
 #### 📚 1 семестр
 
 - [ОАиП - Основы алгоритмизации и программирования <br>
-  <code>C</code> <code>Algorithms</code>](OAiP-Algorithms)
+  `C` `Algorithms`](OAiP-Algorithms)
