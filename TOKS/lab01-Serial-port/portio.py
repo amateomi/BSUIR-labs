@@ -1,6 +1,8 @@
-import serial
+#!/usr/bin/env python3
 
-import stuffing
+import argparse
+
+import serial
 
 WRITE_MESSAGE = """Enter option:
 w) Write message
@@ -25,7 +27,6 @@ def read(port_name: str):
 
         while True:
             message = port.readline().decode()
-            message = stuffing.decode_message(message)
             print(f"Decoded message: {message}", flush=True)
 
 
@@ -39,7 +40,6 @@ def write(port_name: str):
             match option:
                 case "w":
                     message = input("Enter message: ") + "\n"
-                    message = stuffing.encode_message(message)
                     print(f"Encoded message: {message}")
                     port.write(message.encode())
 
@@ -57,3 +57,25 @@ def write(port_name: str):
 
                 case _:
                     print("Invalid option")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("port", metavar="port", help="Serial port")
+    parser.add_argument("mode", metavar="mode", choices=["read", "write"], help="I/O option")
+
+    args = parser.parse_args()
+
+    port = args.port
+    mode = args.mode
+
+    match mode:
+        case "read":
+            read(port)
+        case "write":
+            write(port)
+
+
+if __name__ == "__main__":
+    main()
