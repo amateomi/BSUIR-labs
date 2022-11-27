@@ -107,6 +107,10 @@ private:
 
 int main()
 {
+    if (getegid()) {
+        cerr << makeRed("Rerun program as root!") << endl;
+        exit(EXIT_FAILURE);
+    }
     UsbDeviceManager manager;
     thread observer { &UsbDeviceManager::observe, &manager };
     while (true) {
