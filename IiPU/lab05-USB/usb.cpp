@@ -108,7 +108,7 @@ private:
 int main()
 {
     if (getegid()) {
-        cerr << makeRed("Rerun program as root!") << endl;
+        cerr << "Rerun program as root!" << endl;
         exit(EXIT_FAILURE);
     }
     UsbDeviceManager manager;
