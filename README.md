@@ -8,7 +8,7 @@
  #### 📚 5 семестр
 
 - [ИиПУ - Интерфейсы и периферийные устройства <br>
-  `Peripherals`](https://github.com/amateomi/BSUIR-labs/tree/IiPU/IiPU)
+  `Peripherals`](IiPU)
 
 - [ТРиТПО - Технологии разработки и тестирования программного обеспечения <br>
   `Business Analysis` `Tests`](https://github.com/amateomi/BSUIR-labs/tree/TRiTPO/TRiTPO)
