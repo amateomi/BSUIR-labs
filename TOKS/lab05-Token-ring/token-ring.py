@@ -55,8 +55,10 @@ def main():
                     current_sequence = Sequence()
 
             if stations_queue[station_id] is None:
-                message = input("Enter new station message (`n` for skip):").strip()
-                if message != "n":
+                message = input("Enter new station message (`n` for skip, `q` for quit):").strip()
+                if message == "q":
+                    quit(0)
+                elif message != "n":
                     destination_address = int(input("Enter destination station address:"))
 
                     new_sequence = Sequence(station_id, True,
