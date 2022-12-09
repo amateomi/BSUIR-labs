@@ -10,7 +10,7 @@ SEGMENT_SIZE = 3
 @dataclass
 class Packet:
     sequence_number: int = 0
-    acknowledgment_number: int = 1
+    acknowledgment_number: int = SEGMENT_SIZE
 
     is_acknowledgment: bool = False
     is_synchronize: bool = True
@@ -90,7 +90,7 @@ def main():
             last_packet = Server.send_acknowledgement()
 
         message = input("Enter message:")
-        segments = textwrap.wrap(message, 3)
+        segments = textwrap.wrap(message, SEGMENT_SIZE)
 
         i = 0
         for seg in segments:
