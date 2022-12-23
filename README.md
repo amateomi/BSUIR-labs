@@ -9,9 +9,6 @@
 
 - [ИиПУ - Интерфейсы и периферийные устройства <br>
   `Interfaces` `Peripherals`](IiPU)
-
-- [ТРиТПО - Технологии разработки и тестирования программного обеспечения <br>
-  `Business Analysis` `Tests`](https://github.com/amateomi/BSUIR-labs/tree/TRiTPO/TRiTPO)
  
 - [ТОКС - Теоретические основы компьютерных сетей <br>
   `TCP/IP` `Networking`](TOKS)
