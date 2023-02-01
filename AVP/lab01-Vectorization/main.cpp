@@ -7,7 +7,7 @@
 #include <immintrin.h>
 
 constexpr auto LIL_MATRIX_SIZE = 6;
-constexpr auto BIG_MATRIX_SIZE = 200;
+constexpr auto BIG_MATRIX_SIZE = 216;
 
 using namespace std;
 using namespace chrono;
@@ -20,7 +20,7 @@ using BigMatrix = LilMatrix[BIG_MATRIX_SIZE][BIG_MATRIX_SIZE];
 [[nodiscard]] BigMatrix* createBigMatrix() {
     auto result = new BigMatrix[BIG_MATRIX_SIZE]{};
     mt19937 r{random_device{}()};
-    uniform_real_distribution<ValueType> distribution{0.0, 1.0};
+    uniform_real_distribution<ValueType> distribution{0.0, 10.0};
     for (int i = 0; i < BIG_MATRIX_SIZE; ++i) {
         for (int j = 0; j < BIG_MATRIX_SIZE; ++j) {
             for (int k = 0; k < LIL_MATRIX_SIZE; ++k) {
@@ -33,7 +33,7 @@ using BigMatrix = LilMatrix[BIG_MATRIX_SIZE][BIG_MATRIX_SIZE];
     return result;
 }
 
-__attribute__((target("no-sse")))
+__attribute__((target("no-sse,no-avx")))
 void multiplyWithoutSimd(const LilMatrix& matrix1, const LilMatrix& matrix2, LilMatrix& result) {
     for (int i = 0; i < LIL_MATRIX_SIZE; ++i) {
         for (int j = 0; j < LIL_MATRIX_SIZE; ++j) {
@@ -44,18 +44,7 @@ void multiplyWithoutSimd(const LilMatrix& matrix1, const LilMatrix& matrix2, Lil
     }
 }
 
-__attribute__((target("no-sse")))
-void multiplyReorder(const LilMatrix matrix1, const LilMatrix matrix2, LilMatrix result) {
-    for (int i = 0; i < LIL_MATRIX_SIZE; ++i) {
-        for (int k = 0; k < LIL_MATRIX_SIZE; ++k) {
-            for (int j = 0; j < LIL_MATRIX_SIZE; ++j) {
-                result[i][j] += matrix1[i][k] * matrix2[k][j];
-            }
-        }
-    }
-}
-
-__attribute__((target("sse")))
+__attribute__((target("sse,avx")))
 void multiplyWithSimd(const LilMatrix& matrix1, const LilMatrix& matrix2, LilMatrix& result) {
     for (int i = 0; i < LIL_MATRIX_SIZE; ++i) {
         for (int j = 0; j < LIL_MATRIX_SIZE; ++j) {
@@ -151,9 +140,8 @@ int main() {
 
     vector<tuple<string_view, MultiplyFunction, BigMatrix*>> testCases{
             {"No SIMD",   multiplyWithoutSimd, nullptr},
-            {"Reorder",   multiplyReorder,     nullptr},
             {"Auto SIMD", multiplyWithSimd,    nullptr},
-            {"My AVX",    multiplyWithMySimd,  nullptr},
+            {"My SIMD",   multiplyWithMySimd,  nullptr},
     };
     for (auto& [message, multiply, result]: testCases) {
         result = new BigMatrix[BIG_MATRIX_SIZE]{};
@@ -162,6 +150,7 @@ int main() {
             calculate(*matrix1, *matrix2, *result, multiply);
         }
     }
+    cout << endl;
 
     const auto correctResult = get<BigMatrix*>(testCases.front());
     for (const auto& item: testCases) {
