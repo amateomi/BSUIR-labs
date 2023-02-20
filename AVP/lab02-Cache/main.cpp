@@ -1,30 +1,39 @@
 #include <iostream>
 #include <chrono>
-#include <fstream>
 #include <string_view>
+#include <vector>
+
+#include <matplot/matplot.h>
+
+// Restrictions: OS - Linux, CPU - AMD Ryzen 4600HS
 
 using namespace std;
 using namespace chrono;
+using namespace matplot;
+
+using Latencies = vector<long>;
 
 class Timer {
 public:
     using ClockType = high_resolution_clock;
 
-    explicit Timer(int number) {
-        cout << number << ": ";
-        m_TimePoint = ClockType::now();
+    Timer(Latencies& latencies, int n)
+            : m_Latencies{latencies} {
+        cout << n << ": ";
+        m_StartTimePoint = ClockType::now();
     }
 
     ~Timer() {
-        auto elapsed = ClockType::now() - m_TimePoint;
-        cout << duration_cast<milliseconds>(elapsed).count() << endl;
+        auto elapsedMilliseconds = duration_cast<milliseconds>(ClockType::now() - m_StartTimePoint).count();
+        cout << elapsedMilliseconds << endl;
+        m_Latencies.push_back(elapsedMilliseconds);
     }
 
 private:
-    time_point<ClockType> m_TimePoint;
+    Latencies& m_Latencies;
+    time_point<ClockType> m_StartTimePoint;
 };
 
-// Restrictions: OS - Linux, CPU - AMD Ryzen 4600HS
 [[nodiscard]] size_t getL3CacheSize() {
     size_t size;
     ifstream{"/sys/devices/system/cpu/cpu0/cache/index3/size"} >> size;
@@ -51,15 +60,28 @@ void init(CacheLineElement* data, int n) {
     }
 }
 
+void drawPlot(Latencies& latencies) {
+    plot(latencies);
+    title("Cache latency");
+    xlabel("N");
+    xrange({2, N});
+    text(9, latencies[8], "8-way");
+    text(17, latencies[16], "16-way");
+    ylabel("Latency");
+    show();
+}
+
 int main() {
+    Latencies latencies{0};
     auto* array = new(align_val_t{64}) CacheLineElement[N * TOTAL_ELEMENTS_IN_CACHE];
     for (int n = 2; n < N; ++n) {
         init(array, n);
         volatile size_t t{};
-        Timer timer{n};
-        for (int i = 0; i < 500'000'000; ++i) {
+        Timer timer{latencies, n};
+        for (int i = 0; i < 1'000'000'000; ++i) {
             t = array[t].index;
         }
     }
     operator delete(array, align_val_t{64});
+    drawPlot(latencies);
 }
