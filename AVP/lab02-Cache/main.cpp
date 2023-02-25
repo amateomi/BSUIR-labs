@@ -1,8 +1,3 @@
-#include <iostream>
-#include <chrono>
-#include <string_view>
-#include <vector>
-
 #include <matplot/matplot.h>
 
 // Restrictions: OS - Linux, CPU - AMD Ryzen 4600HS
