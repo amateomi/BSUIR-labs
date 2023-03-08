@@ -1,6 +1,5 @@
 #include <iostream>
 #include <iomanip>
-#include <cmath>
 
 using namespace std;
 
@@ -10,112 +9,87 @@ using namespace std;
         exit(1);                                                                             \
     }
 
-//__global__
-//void add(int n, const float* x, float* y) {
-//    const auto index = blockIdx.x * blockDim.x + threadIdx.x;
-//    const auto stride = blockDim.x * gridDim.x;
-//    for (auto i = index; i < n; i += stride) {
-//        y[i] = x[i] + y[i];
-//    }
-//}
+#define MATRIX_TYPE 0
 
-void transpose(const int in[], int out[],
-               int n, int m) {
-    for (int ii = 0; ii < n * m; ++ii) {
-        const int i = ii / m;
-        const int j = ii % m;
+#if MATRIX_TYPE == 0
+constexpr int N = 7;
+constexpr int M = 9;
+#elif MATRIX_TYPE == 1
+constexpr int N = 6;
+constexpr int M = 4;
+#elif MATRIX_TYPE == 2
+constexpr int N = 5;
+constexpr int M = 5;
+#endif
 
-        const int depth = min(min(i, j), min(n - i - 1, m - j - 1));
-        const int totalUpperDepthElements = 2 * depth * (n + m - 2 * depth);
+__device__ __managed__
+int source[N * M]{
+#if MATRIX_TYPE == 0
+        1, 2, 3, 4, 5, 6, 7, 8, 9,
+        28, 29, 30, 31, 32, 33, 34, 35, 10,
+        27, 48, 49, 50, 51, 52, 53, 36, 11,
+        26, 47, 60, 61, 62, 63, 54, 37, 12,
+        25, 46, 59, 58, 57, 56, 55, 38, 13,
+        24, 45, 44, 43, 42, 41, 40, 39, 14,
+        23, 22, 21, 20, 19, 18, 17, 16, 15
+#elif MATRIX_TYPE == 1
+        1, 2, 3, 4,
+        16, 17, 18, 5,
+        15, 24, 19, 6,
+        14, 23, 20, 7,
+        13, 22, 21, 8,
+        12, 11, 10, 9
+#elif MATRIX_TYPE == 2
+        1, 2, 3, 4, 5,
+        16, 17, 18, 19, 6,
+        15, 24, 25, 20, 7,
+        14, 23, 22, 21, 8,
+        13, 12, 11, 10, 9
+#endif
+};
+__device__ __managed__
+int destination[N * M];
 
-        if (bool isTop = i <= n / 2 && i - 1 < j && j < m - i; isTop) {
-            out[totalUpperDepthElements + ii % (m + 1)] = in[ii];
+__global__ void applyDarkMagic() {
+    const unsigned i = threadIdx.x / M;
+    const unsigned j = threadIdx.x % M;
 
-        } else if (bool isBottom = i >= n / 2 && n - i - 2 < j && j < m - (n - i - 1); isBottom) {
-            out[totalUpperDepthElements + n + n * m + m - 3 - depth * (m + 5) - ii] = in[ii];
+    const unsigned depth = min(min(i, j), min(N - i - 1, M - j - 1));
+    const unsigned totalUpperDepthsElements = 2 * depth * (N + M - 2 * depth);
 
+    if (bool isTop = i <= N / 2 && i < j + 1 && j < M - i; isTop) {
+        destination[totalUpperDepthsElements + threadIdx.x % (M + 1)] = source[threadIdx.x];
 
-        } else if (bool isLeft = j < m / 2 && j < i && i < n - j - 1; isLeft) {
-            out[totalUpperDepthElements + 2 * m + n - 6 * depth - 2 +
-                (n * m - (2 + depth) * m + depth - ii) / m] = in[ii];
+    } else if (bool isBottom = i >= N / 2 && N - i - 1 < j + 1 && j < M - (N - i - 1); isBottom) {
+        destination[totalUpperDepthsElements + N + N * M + M - 3 - depth * (M + 5) - threadIdx.x] = source[threadIdx.x];
 
-        } else if (bool isRight = j >= m / 2 && m - j - 1 < i && i < n - (m - j); isRight) {
-            out[totalUpperDepthElements + m - 2 * depth + (ii - (2 + depth) * m + 1 + depth) / m] = in[ii];
-        }
+    } else if (bool isLeft = j < M / 2 && j < i && i < N - j - 1; isLeft) {
+        destination[totalUpperDepthsElements + 2 * M + N - 6 * depth - 2 +
+                    (N * M - (2 + depth) * M + depth - threadIdx.x) / M] = source[threadIdx.x];
+
+    } else if (bool isRight = j >= M / 2 && M - j - 1 < i && i < N - (M - j); isRight) {
+        destination[totalUpperDepthsElements + M - 2 * depth +
+                    (threadIdx.x - (2 + depth) * M + 1 + depth) / M] = source[threadIdx.x];
     }
 }
 
+std::ostream& operator<<(std::ostream& os, const int matrix[]) {
+    for (int i = 0; i < N * M; ++i) {
+        if (i % M == 0 && i != 0) {
+            os << endl;
+        }
+        os << setw(3) << matrix[i] << ' ';
+    }
+    return os << endl;
+}
+
 int main() {
-#define MATRIX_TYPE 2
+    cout << "Source matrix:\n"
+         << source << endl;
 
-#if MATRIX_TYPE == 0
-    constexpr int N = 7;
-    constexpr int M = 9;
-    int matrix[N * M]{
-            1, 2, 3, 4, 5, 6, 7, 8, 9,
-            28, 29, 30, 31, 32, 33, 34, 35, 10,
-            27, 48, 49, 50, 51, 52, 53, 36, 11,
-            26, 47, 60, 61, 62, 63, 54, 37, 12,
-            25, 46, 59, 58, 57, 56, 55, 38, 13,
-            24, 45, 44, 43, 42, 41, 40, 39, 14,
-            23, 22, 21, 20, 19, 18, 17, 16, 15
-    };
-#elif MATRIX_TYPE == 1
-    constexpr int N = 6;
-    constexpr int M = 4;
-    int matrix[N * M]{
-            1, 2, 3, 4,
-            16, 17, 18, 5,
-            15, 24, 19, 6,
-            14, 23, 20, 7,
-            13, 22, 21, 8,
-            12, 11, 10, 9,
-    };
-#elif MATRIX_TYPE == 2
-    constexpr int N = 5;
-    constexpr int M = 5;
-    int matrix[N * M]{
-            1, 2, 3, 4, 5,
-            16, 17, 18, 19, 6,
-            15, 24, 25, 20, 7,
-            14, 23, 22, 21, 8,
-            13, 12, 11, 10, 9
-    };
-#endif
+    applyDarkMagic<<<1, N * M>>>();
+    CUDA_ASSERT(cudaDeviceSynchronize())
 
-    for (int i = 0; i < N * M; ++i) {
-        if (i % M == 0) {
-            cout << endl;
-        }
-        cout << setw(3) << matrix[i] << " ";
-    }
-    cout << endl;
-
-    int res[N * M]{};
-
-    transpose(matrix, res, N, M);
-
-    for (int i = 0; i < N * M; ++i) {
-        if (i % M == 0) {
-            cout << endl;
-        }
-        cout << setw(3) << res[i] << " ";
-    }
-//    constexpr size_t N = 1'000'000;
-//
-//    float* x, * y;
-//    CUDA_ASSERT(cudaMallocManaged(&x, N * sizeof(float)))
-//    CUDA_ASSERT(cudaMallocManaged(&y, N * sizeof(float)))
-//
-//    for (int i = 0; i < N; i++) {
-//        x[i] = 1.0f;
-//        y[i] = 2.0f;
-//    }
-//
-//    constexpr size_t threadsAmount = 256;
-//    constexpr size_t blocksAmount = (N + threadsAmount - 1) / threadsAmount;
-//
-//    add<<<blocksAmount, threadsAmount>>>(N, x, y);
-//
-//    CUDA_ASSERT(cudaDeviceSynchronize())
+    cout << "Destination matrix:\n"
+         << destination << endl;
 }
