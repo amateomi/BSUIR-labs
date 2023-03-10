@@ -50,26 +50,29 @@ int source[N * M]{
 __device__ __managed__
 int destination[N * M];
 
-__global__ void applyDarkMagic() {
-    const unsigned i = threadIdx.x / M;
-    const unsigned j = threadIdx.x % M;
+__global__
+void applyDarkMagic() {
+    const unsigned id = blockIdx.x * blockDim.x + threadIdx.x;
+
+    const unsigned i = id / M;
+    const unsigned j = id % M;
 
     const unsigned depth = min(min(i, j), min(N - i - 1, M - j - 1));
     const unsigned totalUpperDepthsElements = 2 * depth * (N + M - 2 * depth);
 
     if (bool isTop = i <= N / 2 && i < j + 1 && j < M - i; isTop) {
-        destination[totalUpperDepthsElements + threadIdx.x % (M + 1)] = source[threadIdx.x];
+        destination[totalUpperDepthsElements + id % (M + 1)] = source[id];
 
     } else if (bool isBottom = i >= N / 2 && N - i - 1 < j + 1 && j < M - (N - i - 1); isBottom) {
-        destination[totalUpperDepthsElements + N + N * M + M - 3 - depth * (M + 5) - threadIdx.x] = source[threadIdx.x];
+        destination[totalUpperDepthsElements + N + N * M + M - 3 - depth * (M + 5) - id] = source[id];
 
     } else if (bool isLeft = j < M / 2 && j < i && i < N - j - 1; isLeft) {
         destination[totalUpperDepthsElements + 2 * M + N - 6 * depth - 2 +
-                    (N * M - (2 + depth) * M + depth - threadIdx.x) / M] = source[threadIdx.x];
+                    (N * M - (2 + depth) * M + depth - id) / M] = source[id];
 
     } else if (bool isRight = j >= M / 2 && M - j - 1 < i && i < N - (M - j); isRight) {
         destination[totalUpperDepthsElements + M - 2 * depth +
-                    (threadIdx.x - (2 + depth) * M + 1 + depth) / M] = source[threadIdx.x];
+                    (id - (2 + depth) * M + 1 + depth) / M] = source[id];
     }
 }
 
@@ -87,7 +90,7 @@ int main() {
     cout << "Source matrix:\n"
          << source << endl;
 
-    applyDarkMagic<<<1, N * M>>>();
+    applyDarkMagic<<<N * M + 127 / 128, 128>>>();
     CUDA_ASSERT(cudaDeviceSynchronize())
 
     cout << "Destination matrix:\n"
