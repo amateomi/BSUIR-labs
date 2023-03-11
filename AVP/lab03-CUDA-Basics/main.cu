@@ -9,7 +9,7 @@ using namespace std;
         exit(1);                                                                             \
     }
 
-#define MATRIX_TYPE 0
+#define MATRIX_TYPE 2
 
 #if MATRIX_TYPE == 0
 constexpr int N = 7;
@@ -90,7 +90,7 @@ int main() {
     cout << "Source matrix:\n"
          << source << endl;
 
-    applyDarkMagic<<<N * M + 127 / 128, 128>>>();
+    applyDarkMagic<<<(N * M + 127) / 128, 128>>>();
     CUDA_ASSERT(cudaDeviceSynchronize())
 
     cout << "Destination matrix:\n"
