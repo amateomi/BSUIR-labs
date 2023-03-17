@@ -51,6 +51,26 @@ def idft(x):
     return c
 
 
+def fft(x):
+    n = len(x)
+    r = n // 2
+    out = [0. + 0.0j] * n
+
+    for i in range(r):
+        out[i] = x[i] + x[i + r]
+        out[i + r] = (x[i] - x[i + r]) * exp(-2j * pi * i / n)
+
+    if n > 2:
+        top_list = fft(out[:r])
+        bot_list = fft(out[r:])
+
+        for i in range(r):
+            out[i * 2] = top_list[i]
+            out[(i + 1) * 2 - 1] = bot_list[i]
+
+    return out
+
+
 def main():
     draw_inner_function()
 
@@ -59,15 +79,19 @@ def main():
     draw_samples(samples)
 
     spectrum = dft(samples)
-
-    magnitudes = [polar(x)[0] for x in spectrum]
+    magnitudes = np.abs(spectrum)
     draw_peaks(magnitudes)
-
-    phases = [polar(x)[1] for x in spectrum]
+    phases = np.angle(spectrum)
     draw_peaks(phases)
 
     another_samples = [x.real for x in idft(spectrum)]
     draw_samples(another_samples)
+
+    spectrum = fft(samples)
+    magnitudes = np.abs(spectrum)
+    draw_peaks(magnitudes)
+    phases = np.angle(spectrum)
+    draw_peaks(phases)
 
 
 if __name__ == "__main__":
