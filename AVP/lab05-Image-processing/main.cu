@@ -150,8 +150,19 @@ void fisheyeTransform(const Image& source, Image& result, const float coefficien
     const auto N = static_cast<float>(source.width);
     for (int y = 0; y < source.height; ++y) {
         for (int x = 0; x < source.width; ++x) {
-            const float nx = (static_cast<float>(x) - (N + 1.0f) / 2.0f) * 2.0f / N;
-            const float ny = (static_cast<float>(y) - (M + 1.0f) / 2.0f) * 2.0f / M;
+            const float nx = (static_cast<float>(x) - (N - 1.0f) / 2.0f) * 2.0f / (N - 1.0f);
+            const float ny = (static_cast<float>(y) - (M - 1.0f) / 2.0f) * 2.0f / (M - 1.0f);
+            const float radius = sqrt(nx * nx + ny * ny);
+            const float theta = atan2(ny, nx);
+            const float epsilon = 0.001f;
+            const float scale = min(1.0f / abs(cos(theta) + epsilon), 1.0f / abs(sin(theta) + epsilon));
+            const float newRadius = min(scale, 1.0f) * pow(radius, coefficient);
+            const auto newX = static_cast<int>(round((N - 1.0f) / 2.0f * newRadius * cos(theta) + (N - 1.0f) / 2.0f));
+            const auto newY = static_cast<int>(round((M - 1.0f) / 2.0f * newRadius * sin(theta) + (M - 1.0f) / 2.0f));
+            if (0 <= newX and newX < source.width and
+                0 <= newY and newY < source.height) {
+                result.data[newX + newY * source.width] = source.data[x + y * source.width];
+            }
         }
     }
 }
@@ -175,7 +186,8 @@ int main() {
     cout << "Fisheye coefficient is " << fisheyeCoefficient << endl;
     cout << "Result marker radius is " << pow(circle.radius, fisheyeCoefficient) << endl;
 
-    const Image result{source.width, source.height, source.channels};
+    Image result{source.width, source.height, source.channels};
+    fisheyeTransform(source, result, fisheyeCoefficient);
     if (!result.saveAsJpg(imagesDirectory + "result.jpg")) {
         cerr << "Failed to save result source" << endl;
     }
