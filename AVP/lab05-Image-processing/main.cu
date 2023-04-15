@@ -25,7 +25,7 @@ struct Image {
     explicit Image(const path& image)
             : data{reinterpret_cast<Pixel*>(stbi_load(image.c_str(), &width, &height, &channels, 0))} {
         if (!data) {
-            throw runtime_error{"Failed to load picture"};
+            throw runtime_error{"Failed to load " + image.string()};
         }
     }
 
@@ -63,7 +63,7 @@ struct MarkerImage {
     MarkerImage(const Image& image, const Pixel markerColor, const Pixel threshold)
             : width{image.width},
               height{image.height},
-              data{new bool[width * height]} {
+              data{new bool[width * height]{}} {
 
         for (int i = 0; i < height; ++i) {
             for (int j = 0; j < width; ++j) {
@@ -88,6 +88,11 @@ struct MarkerImage {
         }
     }
 
+    MarkerImage(const int width, const int height)
+            : width{width},
+              height{height},
+              data{new bool[width * height]{}} {}
+
     ~MarkerImage() {
         delete[] data;
         delete[] markedPixelsCoordinates;
@@ -111,8 +116,9 @@ struct MarkerImage {
     int width;
     int height;
     bool* data;
-    int markedPixelsAmount{};
-    int2* markedPixelsCoordinates{};
+
+    [[maybe_unused]] int markedPixelsAmount{};
+    [[maybe_unused]] int2* markedPixelsCoordinates{};
 };
 
 [[nodiscard]]
@@ -145,7 +151,7 @@ struct MarkerCircle {
     int radius{};
 };
 
-void fisheyeTransform(const Image& source, Image& result, const float coefficient) {
+void fisheyeTransform(const Image& source, Image& target, MarkerImage& interpolationMask, const float coefficient) {
     const auto M = static_cast<float>(source.height);
     const auto N = static_cast<float>(source.width);
     for (int y = 0; y < source.height; ++y) {
@@ -161,8 +167,92 @@ void fisheyeTransform(const Image& source, Image& result, const float coefficien
             const auto newY = static_cast<int>(round((M - 1.0f) / 2.0f * newRadius * sin(theta) + (M - 1.0f) / 2.0f));
             if (0 <= newX and newX < source.width and
                 0 <= newY and newY < source.height) {
-                result.data[newX + newY * source.width] = source.data[x + y * source.width];
+                target.data[newX + newY * target.width] = source.data[x + y * source.width];
+                interpolationMask.data[newX + newY * interpolationMask.width] = true;
             }
+        }
+    }
+}
+
+[[nodiscard]]
+int findLeftColoredPixelX(const MarkerImage& mask, const int2 start) {
+    for (int x = start.x; x >= 0; --x) {
+        if (mask.data[x + start.y * mask.width]) {
+            return x;
+        }
+    }
+    return 0;
+}
+
+[[nodiscard]]
+int findRightColoredPixelX(const MarkerImage& mask, const int2 start) {
+    for (int x = start.x; x < mask.width; ++x) {
+        if (mask.data[x + start.y * mask.width]) {
+            return x;
+        }
+    }
+    return mask.width - 1;
+}
+
+[[nodiscard]]
+int findTopColoredPixelY(const MarkerImage& mask, const int2 start) {
+    for (int y = start.y; y >= 0; --y) {
+        if (mask.data[start.x + y * mask.width]) {
+            return y;
+        }
+    }
+    return 0;
+}
+
+[[nodiscard]]
+int findBottomColoredPixelY(const MarkerImage& mask, const int2 start) {
+    for (int y = start.y; y < mask.height; ++y) {
+        if (mask.data[start.x + y * mask.width]) {
+            return y;
+        }
+    }
+    return mask.height - 1;
+}
+
+void interpolate(const MarkerImage& mask, Image& target) {
+    for (int y = 0; y < mask.height; ++y) {
+        for (int x = 0; x < mask.width; ++x) {
+            if (mask.data[x + y * mask.width]) {
+                continue;
+            }
+            const int leftX = findLeftColoredPixelX(mask, {x, y});
+            const int rightX = findRightColoredPixelX(mask, {x, y});
+            const int topY = findTopColoredPixelY(mask, {x, y});
+            const int bottomY = findBottomColoredPixelY(mask, {x, y});
+
+            const int distanceX = rightX - leftX;
+            const int distanceY = bottomY - topY;
+
+            uint8_t red;
+            uint8_t green;
+            uint8_t blue;
+            if (distanceX < distanceY) {
+                const Pixel leftPixel{target.data[leftX + y * target.width]};
+                const Pixel rightPixel{target.data[rightX + y * target.width]};
+                const float scale = static_cast<float>(rightX - x) / static_cast<float>(rightX - leftX);
+                red = static_cast<uint8_t>(scale * static_cast<float>(leftPixel.red) +
+                                           (1.0f - scale) * static_cast<float>(rightPixel.red));
+                green = static_cast<uint8_t>(scale * static_cast<float>(leftPixel.green) +
+                                             (1.0f - scale) * static_cast<float>(rightPixel.green));
+                blue = static_cast<uint8_t>(scale * static_cast<float>(leftPixel.blue) +
+                                            (1.0f - scale) * static_cast<float>(rightPixel.blue));
+            } else {
+                const Pixel topPixel{target.data[x + topY * target.width]};
+                const Pixel bottomPixel{target.data[x + bottomY * target.width]};
+                const float scale = static_cast<float>(bottomY - y) / static_cast<float>(bottomY - topY);
+                red = static_cast<uint8_t>(scale * static_cast<float>(topPixel.red) +
+                                           (1.0f - scale) * static_cast<float>(bottomPixel.red));
+                green = static_cast<uint8_t>(scale * static_cast<float>(topPixel.green) +
+                                             (1.0f - scale) * static_cast<float>(bottomPixel.green));
+                blue = static_cast<uint8_t>(scale * static_cast<float>(topPixel.blue) +
+                                            (1.0f - scale) * static_cast<float>(bottomPixel.blue));
+            }
+            target.data[x + y * target.width] = {red, green, blue};
         }
     }
 }
@@ -175,7 +265,7 @@ int main() {
     constexpr Pixel threshold{50, 50, 50};
     const MarkerImage markerImage{source, markerColor, threshold};
     if (!markerImage.saveAsPbm(imagesDirectory + "marker.pbm")) {
-        cerr << "Failed to save markerImage" << endl;
+        cerr << "Failed to save marker.pbm" << endl;
     }
 
     MarkerCircle circle{markerImage};
@@ -186,9 +276,18 @@ int main() {
     cout << "Fisheye coefficient is " << fisheyeCoefficient << endl;
     cout << "Result marker radius is " << pow(circle.radius, fisheyeCoefficient) << endl;
 
-    Image result{source.width, source.height, source.channels};
-    fisheyeTransform(source, result, fisheyeCoefficient);
-    if (!result.saveAsJpg(imagesDirectory + "result.jpg")) {
-        cerr << "Failed to save result source" << endl;
+    Image fisheye{source.width, source.height, source.channels};
+    MarkerImage interpolationMask{fisheye.width, source.height};
+    fisheyeTransform(source, fisheye, interpolationMask, 0.3);
+    if (!fisheye.saveAsJpg(imagesDirectory + "fisheye.jpg")) {
+        cerr << "Failed to save fisheye.jpg" << endl;
+    }
+    if (!interpolationMask.saveAsPbm(imagesDirectory + "interpolating.pbm")) {
+        cerr << "Failed to save interpolating.pbm" << endl;
+    }
+
+    interpolate(interpolationMask, fisheye);
+    if (!fisheye.saveAsJpg(imagesDirectory + "result.jpg")) {
+        cerr << "Failed to save result.jpg" << endl;
     }
 }
