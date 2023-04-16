@@ -17,8 +17,8 @@ struct MarkerImage {
     int height;
     bool* data;
 
-    [[maybe_unused]] int markedPixelsAmount{};
-    [[maybe_unused]] int2* markedPixelsCoordinates{};
+    bool* deviceData{};
+    size_t pitch{};
 };
 
 struct MarkerCircle {
@@ -28,6 +28,7 @@ struct MarkerCircle {
 };
 
 [[nodiscard]]
+__device__
 inline int calculateCircleRadius(const float x, const float y) {
     return static_cast<int>(round(sqrt(x * x + y * y)));
 }

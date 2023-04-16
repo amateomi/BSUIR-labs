@@ -8,11 +8,18 @@
 
 #include "stb_image_write.h"
 
+#include "utility.cuh"
+
 Image::Image(const string_view image)
         : data{reinterpret_cast<Pixel<>*>(stbi_load(image.data(), &width, &height, &channels, 0))} {
     if (!data) {
         throw runtime_error{"Failed to load " + string{image}};
     }
+    CUDA_ASSERT(cudaMallocPitch(&deviceData, &pitch, width * sizeof(Pixel<>), height))
+    CUDA_ASSERT(cudaMemcpy2D(deviceData, pitch,
+                             data, width * sizeof(Pixel<>),
+                             width * sizeof(Pixel<>), height,
+                             cudaMemcpyHostToDevice))
 }
 
 Image::Image(const int width, const int height, const int channels)
@@ -31,6 +38,7 @@ Image::Image(const int width, const int height, const int channels)
 }
 
 Image::~Image() {
+    CUDA_ASSERT(cudaFree(deviceData))
     stbi_image_free(data);
 }
 

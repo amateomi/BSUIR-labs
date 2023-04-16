@@ -28,4 +28,7 @@ struct Image {
     int height{};
     int channels{};
     Pixel<>* data;
+
+    Pixel<>* deviceData{};
+    size_t pitch{};
 };
