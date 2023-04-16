@@ -116,9 +116,10 @@ MarkerCircle::MarkerCircle(const MarkerImage& markerImage) {
     findRadius<<<GRID_DIM, BLOCK_DIM>>>(markerImage.deviceData, markerImage.pitch,
                                         markerImage.width, markerImage.height,
                                         radiusAccumulator, maxRadius, center);
-    cudaDeviceSynchronize();
+    CUDA_ASSERT(cudaDeviceSynchronize())
 
     const auto* maxElement = max_element(radiusAccumulator, radiusAccumulator + maxRadius + 1);
     const auto maxElementIndex = maxElement - radiusAccumulator;
     radius = static_cast<int>(maxElementIndex);
+    CUDA_ASSERT(cudaFree(radiusAccumulator))
 }
