@@ -3,7 +3,7 @@
 #include <chrono>
 #include <iostream>
 
-#include "computation.hpp"
+#include "computation.cuh"
 
 using namespace std;
 using namespace chrono;

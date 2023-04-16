@@ -2,7 +2,7 @@
 
 #include <iostream>
 
-#include "math.hpp"
+#include "math.cuh"
 
 using namespace std;
 

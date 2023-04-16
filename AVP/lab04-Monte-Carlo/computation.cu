@@ -1,4 +1,4 @@
-#include "computation.hpp"
+#include "computation.cuh"
 
 #include <random>
 

@@ -1,5 +1,5 @@
-#include "computation.hpp"
-#include "timers.hpp"
+#include "computation.cuh"
+#include "timers.cuh"
 
 using namespace std;
 
