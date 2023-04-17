@@ -15,8 +15,8 @@ void findMarker(Pixel<>* sourceImage, const size_t sourceImagePitch,
     if (y >= height) {
         return;
     }
-    const auto* sourceRow = reinterpret_cast<Pixel<>*>(rowPitched(sourceImage, sourceImagePitch, y));
-    auto* markerRow = reinterpret_cast<bool*>(rowPitched(markerImage, markerImagePitch, y));
+    const auto* sourceRow = static_cast<Pixel<>*>(rowPitched(sourceImage, sourceImagePitch, y));
+    auto* markerRow = static_cast<bool*>(rowPitched(markerImage, markerImagePitch, y));
     for (int i = 0; i < PIXELS_PER_THREAD; ++i) {
         if ((x + i) >= width) {
             return;
@@ -36,12 +36,10 @@ MarkerImage::MarkerImage(const Image& image, const Pixel<> markerColor, const Pi
 
     CUDA_ASSERT(cudaMallocPitch(&deviceData, &pitch, width * sizeof(bool), height))
 
-    constexpr dim3 BLOCK_DIM{16, 16};
     const dim3 GRID_DIM{
             (image.width + BLOCK_DIM.x * PIXELS_PER_THREAD - 1) / (BLOCK_DIM.x * PIXELS_PER_THREAD),
             (image.height + BLOCK_DIM.y - 1) / BLOCK_DIM.y
     };
-
     findMarker<<<GRID_DIM, BLOCK_DIM>>>(image.deviceData, image.pitch,
                                         deviceData, pitch,
                                         width, height,
@@ -55,7 +53,11 @@ MarkerImage::MarkerImage(const Image& image, const Pixel<> markerColor, const Pi
 MarkerImage::MarkerImage(const int width, const int height)
         : width{width},
           height{height},
-          data{new bool[width * height]{}} {}
+          data{new bool[width * height]{}} {
+
+    CUDA_ASSERT(cudaMallocPitch(&deviceData, &pitch, width * sizeof(bool), height))
+    CUDA_ASSERT(cudaMemset2D(deviceData, pitch, 0, width * sizeof(bool), height))
+}
 
 MarkerImage::~MarkerImage() {
     CUDA_ASSERT(cudaFree(deviceData))
@@ -85,7 +87,7 @@ void findRadius(bool* markerImage, const size_t markerImagePitch,
     if (y >= height) {
         return;
     }
-    auto* row = reinterpret_cast<bool*>(rowPitched(markerImage, markerImagePitch, y));
+    const auto* row = reinterpret_cast<bool*>(rowPitched(markerImage, markerImagePitch, y));
     for (int i = 0; i < PIXELS_PER_THREAD; ++i) {
         if ((x + i) >= width) {
             return;
@@ -100,21 +102,21 @@ void findRadius(bool* markerImage, const size_t markerImagePitch,
     }
 }
 
-MarkerCircle::MarkerCircle(const MarkerImage& markerImage) {
-    const int maxRadius = min(markerImage.width, markerImage.height) / 2;
-    const float2 center{static_cast<float>(markerImage.width) / 2.0f - 0.5f,
-                        static_cast<float>(markerImage.height) / 2.0f - 0.5f};
+MarkerCircle::MarkerCircle(const MarkerImage& marker) {
+    const int maxRadius = min(marker.width, marker.height) / 2;
+    const float2 center{static_cast<float>(marker.width) / 2.0f - 0.5f,
+                        static_cast<float>(marker.height) / 2.0f - 0.5f};
 
     int* radiusAccumulator;
     CUDA_ASSERT(cudaMallocManaged(&radiusAccumulator, (maxRadius + 1) * sizeof(int)))
+    CUDA_ASSERT(cudaMemset(radiusAccumulator, 0, (maxRadius + 1) * sizeof(int)))
 
-    constexpr dim3 BLOCK_DIM{16, 16};
     const dim3 GRID_DIM{
-            (markerImage.width + BLOCK_DIM.x * PIXELS_PER_THREAD - 1) / (BLOCK_DIM.x * PIXELS_PER_THREAD),
-            (markerImage.height + BLOCK_DIM.y - 1) / BLOCK_DIM.y
+            (marker.width + BLOCK_DIM.x * PIXELS_PER_THREAD - 1) / (BLOCK_DIM.x * PIXELS_PER_THREAD),
+            (marker.height + BLOCK_DIM.y - 1) / BLOCK_DIM.y
     };
-    findRadius<<<GRID_DIM, BLOCK_DIM>>>(markerImage.deviceData, markerImage.pitch,
-                                        markerImage.width, markerImage.height,
+    findRadius<<<GRID_DIM, BLOCK_DIM>>>(marker.deviceData, marker.pitch,
+                                        marker.width, marker.height,
                                         radiusAccumulator, maxRadius, center);
     CUDA_ASSERT(cudaDeviceSynchronize())
 

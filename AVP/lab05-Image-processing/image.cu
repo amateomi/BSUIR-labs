@@ -35,6 +35,8 @@ Image::Image(const int width, const int height, const int channels)
             data[j + i * width] = {0, 0, 0};
         }
     }
+    CUDA_ASSERT(cudaMallocPitch(&deviceData, &pitch, width * sizeof(Pixel<>), height))
+    CUDA_ASSERT(cudaMemset2D(deviceData, pitch, 0, width * sizeof(Pixel<>), height))
 }
 
 Image::~Image() {

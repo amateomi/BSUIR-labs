@@ -22,7 +22,7 @@ struct MarkerImage {
 };
 
 struct MarkerCircle {
-    explicit MarkerCircle(const MarkerImage& markerImage);
+    explicit MarkerCircle(const MarkerImage& marker);
 
     int radius{};
 };

@@ -10,6 +10,7 @@ using namespace std;
   }
 
 constexpr int PIXELS_PER_THREAD = 4;
+constexpr dim3 BLOCK_DIM{16, 16};
 
 [[nodiscard]]
 __device__
