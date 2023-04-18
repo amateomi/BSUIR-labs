@@ -18,7 +18,7 @@ struct Image {
 
     Image(int width, int height, int channels);
 
-    ~Image();
+    ~Image() noexcept(false);
 
     // Return false on failure
     [[nodiscard]]
@@ -27,7 +27,6 @@ struct Image {
     int width{};
     int height{};
     int channels{};
-    Pixel<>* data;
 
     Pixel<>* deviceData{};
     size_t pitch{};

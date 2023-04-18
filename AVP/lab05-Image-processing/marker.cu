@@ -2,8 +2,15 @@
 
 #include <algorithm>
 #include <fstream>
+#include <memory>
 
 #include "utility.cuh"
+
+[[nodiscard]]
+__device__
+inline int calculateCircleRadius(const float x, const float y) {
+    return static_cast<int>(round(sqrt(x * x + y * y)));
+}
 
 __global__
 void findMarker(Pixel<>* sourceImage, const size_t sourceImagePitch,
@@ -31,9 +38,7 @@ void findMarker(Pixel<>* sourceImage, const size_t sourceImagePitch,
 
 MarkerImage::MarkerImage(const Image& image, const Pixel<> markerColor, const Pixel<> threshold)
         : width{image.width},
-          height{image.height},
-          data{new bool[width * height]{}} {
-
+          height{image.height} {
     CUDA_ASSERT(cudaMallocPitch(&deviceData, &pitch, width * sizeof(bool), height))
 
     const dim3 GRID_DIM{
@@ -44,27 +49,25 @@ MarkerImage::MarkerImage(const Image& image, const Pixel<> markerColor, const Pi
                                         deviceData, pitch,
                                         width, height,
                                         markerColor, threshold);
-    CUDA_ASSERT(cudaMemcpy2D(data, width * sizeof(bool),
-                             deviceData, pitch,
-                             width * sizeof(bool), height,
-                             cudaMemcpyDeviceToHost))
 }
 
 MarkerImage::MarkerImage(const int width, const int height)
         : width{width},
-          height{height},
-          data{new bool[width * height]{}} {
-
+          height{height} {
     CUDA_ASSERT(cudaMallocPitch(&deviceData, &pitch, width * sizeof(bool), height))
     CUDA_ASSERT(cudaMemset2D(deviceData, pitch, 0, width * sizeof(bool), height))
 }
 
-MarkerImage::~MarkerImage() {
+MarkerImage::~MarkerImage() noexcept(false) {
     CUDA_ASSERT(cudaFree(deviceData))
-    delete[] data;
 }
 
 bool MarkerImage::saveAsPbm(const string_view fileName) const {
+    auto data = make_unique<bool[]>(width * height);
+    CUDA_ASSERT(cudaMemcpy2D(data.get(), width * sizeof(bool),
+                             deviceData, pitch,
+                             width * sizeof(bool), height,
+                             cudaMemcpyDeviceToHost))
     ofstream file{fileName.data()};
     file << "P1\n"
          << "# Marker image\n"
@@ -123,5 +126,6 @@ MarkerCircle::MarkerCircle(const MarkerImage& marker) {
     const auto* maxElement = max_element(radiusAccumulator, radiusAccumulator + maxRadius + 1);
     const auto maxElementIndex = maxElement - radiusAccumulator;
     radius = static_cast<int>(maxElementIndex);
+
     CUDA_ASSERT(cudaFree(radiusAccumulator))
 }

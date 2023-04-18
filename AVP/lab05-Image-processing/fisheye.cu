@@ -2,6 +2,12 @@
 
 #include "utility.cuh"
 
+[[nodiscard]]
+__host__ __device__
+inline float normalizeValue(const float value, const float max) {
+    return (value - (max - 1.0f) / 2.0f) * 2.0f / (max - 1.0f);
+}
+
 float calculateFisheyeCoefficient(const float width, const float height, const float radius) {
     const float2 normalizedSourceCirclePoint{
             normalizeValue(width / 2.0f + radius, width),
@@ -19,11 +25,11 @@ float calculateFisheyeCoefficient(const float width, const float height, const f
 }
 
 __global__
-void transform(Pixel<>* sourceImage, const size_t sourceImagePitch,
-               Pixel<>* targetImage, const size_t targetImagePitch,
-               bool* interpolationMask, const size_t interpolationMaskPitch,
-               const int width, const int height,
-               const float coefficient) {
+void fisheyeTransform(Pixel<>* sourceImage, const size_t sourceImagePitch,
+                      Pixel<>* targetImage, const size_t targetImagePitch,
+                      bool* interpolationMask, const size_t interpolationMaskPitch,
+                      const int width, const int height,
+                      const float coefficient) {
     const unsigned x = (threadIdx.x + blockDim.x * blockIdx.x) * PIXELS_PER_THREAD;
     const unsigned y = threadIdx.y + blockDim.y * blockIdx.y;
     if (y >= height) {
@@ -67,17 +73,9 @@ void fisheyeTransform(const Image& source, Image& target, MarkerImage& interpola
             (source.width + BLOCK_DIM.x * PIXELS_PER_THREAD - 1) / (BLOCK_DIM.x * PIXELS_PER_THREAD),
             (source.height + BLOCK_DIM.y - 1) / BLOCK_DIM.y
     };
-    transform<<<GRID_DIM, BLOCK_DIM>>>(source.deviceData, source.pitch,
-                                       target.deviceData, target.pitch,
-                                       interpolationMask.deviceData, interpolationMask.pitch,
-                                       source.width, source.height,
-                                       coefficient);
-    CUDA_ASSERT(cudaMemcpy2D(target.data, target.width * sizeof(Pixel<>),
-                             target.deviceData, target.pitch,
-                             target.width * sizeof(Pixel<>), target.height,
-                             cudaMemcpyDeviceToHost))
-    CUDA_ASSERT(cudaMemcpy2D(interpolationMask.data, interpolationMask.width * sizeof(bool),
-                             interpolationMask.deviceData, interpolationMask.pitch,
-                             interpolationMask.width * sizeof(bool), interpolationMask.height,
-                             cudaMemcpyDeviceToHost))
+    fisheyeTransform<<<GRID_DIM, BLOCK_DIM>>>(source.deviceData, source.pitch,
+                                              target.deviceData, target.pitch,
+                                              interpolationMask.deviceData, interpolationMask.pitch,
+                                              source.width, source.height,
+                                              coefficient);
 }
