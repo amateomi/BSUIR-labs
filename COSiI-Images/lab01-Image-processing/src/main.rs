@@ -1,6 +1,6 @@
 use eframe::{
     egui,
-    egui::{widgets::plot, plot::BarChart},
+    egui::{plot::BarChart, widgets::plot},
     epaint::{Color32, ColorImage},
 };
 use egui_extras::RetainedImage;
@@ -37,7 +37,10 @@ struct ConvolutionKernel {
 
 impl Default for ConvolutionKernel {
     fn default() -> Self {
-        Self { coefficient: [1; 9], divider: 9}
+        Self {
+            coefficient: [1; 9],
+            divider: 9,
+        }
     }
 }
 
@@ -55,7 +58,7 @@ impl Default for Brightness {
 
 struct Application {
     state: ViewState,
-    
+
     source_image: ColorImage,
     gray_image: ColorImage,
 
@@ -79,15 +82,19 @@ impl Default for Application {
 
         Self {
             state: ViewState::SourceImage,
-                
+
             source_image,
             gray_image,
 
-            source_brightness_bar_chart: source_brightness_bar_chart.iter().enumerate().map(|(x, y)| plot::Bar::new(x as f64, *y as f64)).collect(),
+            source_brightness_bar_chart: source_brightness_bar_chart
+                .iter()
+                .enumerate()
+                .map(|(x, y)| plot::Bar::new(x as f64, *y as f64))
+                .collect(),
 
             source_brightness,
             target_brightness: Brightness::default(),
-            
+
             min_target_brightness_buffer: String::new(),
             max_target_brightness_buffer: String::new(),
         }
@@ -113,8 +120,8 @@ fn find_brightness(image: &ColorImage) -> Brightness {
     result
 }
 
-fn find_bar_chart(image: &ColorImage) -> [usize; u8::MAX as usize + 1] {
-    let mut bar_chart: [usize; u8::MAX as usize + 1] = [0; u8::MAX as usize + 1];
+fn find_bar_chart(image: &ColorImage) -> [usize; (u8::MAX as usize) + 1] {
+    let mut bar_chart: [usize; (u8::MAX as usize) + 1] = [0; (u8::MAX as usize) + 1];
 
     for y in 0..image.height() {
         for x in 0..image.width() {
@@ -129,7 +136,7 @@ fn find_bar_chart(image: &ColorImage) -> [usize; u8::MAX as usize + 1] {
 
 fn compute_g(f_cur: u32, f_min: u32, f_max: u32, g_min: u32, g_max: u32) -> u8 {
     let result = ((f_cur - f_min) * (g_max - g_min)) / (f_max - f_min) + g_min;
-    if result > u8::MAX as u32 {
+    if result > (u8::MAX as u32) {
         u8::MAX
     } else {
         result as u8
@@ -208,17 +215,24 @@ fn compute_contrast_image(
     result
 }
 
-fn low_pass_filter_for_pixel_component(image: &ColorImage, target_x: usize, target_y: usize, kernel: &ConvolutionKernel, color_component_index: usize) -> u8 {
+fn low_pass_filter_for_pixel_component(
+    image: &ColorImage,
+    target_x: usize,
+    target_y: usize,
+    kernel: &ConvolutionKernel,
+    color_component_index: usize,
+) -> u8 {
     let mut accumulator: usize = 0;
     for y in 0..3usize {
         for x in 0..3usize {
             let i = (y + target_y - 1) * image.width() + (x + target_x - 1);
             let kernel_index = y * 3 + x;
-            accumulator += image.pixels[i][color_component_index] as usize * kernel.coefficient[kernel_index];
+            accumulator += (image.pixels[i][color_component_index] as usize)
+                * kernel.coefficient[kernel_index];
         }
     }
     let result = accumulator / kernel.divider;
-    if result > u8::MAX as usize {
+    if result > (u8::MAX as usize) {
         u8::MAX
     } else {
         result as u8
@@ -226,7 +240,6 @@ fn low_pass_filter_for_pixel_component(image: &ColorImage, target_x: usize, targ
 }
 
 fn compute_low_pass_filter(image: &ColorImage) -> ColorImage {
-
     let mut result = ColorImage::new(image.size, Color32::BLACK);
 
     let kernel = ConvolutionKernel::default();
@@ -257,7 +270,8 @@ impl eframe::App for Application {
                         ViewState::ContrastImage => ViewState::GrayscaleImage,
                         ViewState::ColoredContrastImage => ViewState::ContrastImage,
                         ViewState::LowPassFilterSourceImage => ViewState::ColoredContrastImage,
-                        ViewState::LowPassFilterGrayscaleImage => ViewState::LowPassFilterSourceImage,
+                        ViewState::LowPassFilterGrayscaleImage =>
+                            ViewState::LowPassFilterSourceImage,
                     };
                 }
                 if ui.button("->").clicked() {
@@ -266,7 +280,8 @@ impl eframe::App for Application {
                         ViewState::GrayscaleImage => ViewState::ContrastImage,
                         ViewState::ContrastImage => ViewState::ColoredContrastImage,
                         ViewState::ColoredContrastImage => ViewState::LowPassFilterSourceImage,
-                        ViewState::LowPassFilterSourceImage => ViewState::LowPassFilterGrayscaleImage,
+                        ViewState::LowPassFilterSourceImage =>
+                            ViewState::LowPassFilterGrayscaleImage,
                         ViewState::LowPassFilterGrayscaleImage => ViewState::SourceImage,
                     };
                 }
@@ -275,122 +290,174 @@ impl eframe::App for Application {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
                     ui.heading(format!("{0}", self.state));
-                    
+
                     match self.state {
                         ViewState::SourceImage | ViewState::GrayscaleImage => {
                             ui.label(format!("{:?}", self.source_brightness));
-                        },
+                        }
                         ViewState::ContrastImage | ViewState::ColoredContrastImage => {
                             ui.horizontal(|ui| {
                                 ui.label("Brightness:");
 
                                 ui.label("min: ");
-                                if ui.text_edit_singleline(&mut self.min_target_brightness_buffer).changed() {
-                                    if let Ok(min_brightness) =
-                                        self.min_target_brightness_buffer.parse::<u8>()
+                                if
+                                    ui
+                                        .text_edit_singleline(
+                                            &mut self.min_target_brightness_buffer
+                                        )
+                                        .changed()
+                                {
+                                    if
+                                        let Ok(min_brightness) =
+                                            self.min_target_brightness_buffer.parse::<u8>()
                                     {
                                         self.target_brightness.min = min_brightness;
                                     }
                                 }
-                                
+
                                 ui.label("max: ");
-                                if ui.text_edit_singleline(&mut self.max_target_brightness_buffer).changed() {
-                                    if let Ok(max_brightness) = self.max_target_brightness_buffer.parse::<u8>() {
+                                if
+                                    ui
+                                        .text_edit_singleline(
+                                            &mut self.max_target_brightness_buffer
+                                        )
+                                        .changed()
+                                {
+                                    if
+                                        let Ok(max_brightness) =
+                                            self.max_target_brightness_buffer.parse::<u8>()
+                                    {
                                         self.target_brightness.max = max_brightness;
                                     }
                                 }
                             });
                         }
-                        ViewState::LowPassFilterSourceImage | ViewState::LowPassFilterGrayscaleImage => ()
+                        | ViewState::LowPassFilterSourceImage
+                        | ViewState::LowPassFilterGrayscaleImage => (),
                     }
                 });
 
                 ui.horizontal(|ui| {
                     match self.state {
                         ViewState::SourceImage => {
-                            RetainedImage::from_color_image("source image", self.source_image.clone())
-                                .show(ui)
+                            RetainedImage::from_color_image(
+                                "source image",
+                                self.source_image.clone()
+                            ).show(ui);
                         }
                         ViewState::GrayscaleImage => {
-                            RetainedImage::from_color_image("gray image", self.gray_image.clone())
-                                .show(ui)
+                            RetainedImage::from_color_image(
+                                "gray image",
+                                self.gray_image.clone()
+                            ).show(ui);
                         }
                         ViewState::ContrastImage | ViewState::ColoredContrastImage => {
                             if self.target_brightness.min >= self.target_brightness.max {
-                                ui.heading(format!(
-                                    "Target brightness minimal value={} must be lower than maximum value={}",
-                                    self.target_brightness.min, self.target_brightness.max
-                                ))
+                                ui.heading(
+                                    format!(
+                                        "Target brightness minimal value={} must be lower than maximum value={}",
+                                        self.target_brightness.min,
+                                        self.target_brightness.max
+                                    )
+                                );
                             } else {
                                 let image = match self.state {
-                                    ViewState::ContrastImage => compute_contrast_image(
-                                        &self.gray_image,
-                                        &self.source_brightness,
-                                        &self.target_brightness,
-                                    ),
-                                    ViewState::ColoredContrastImage => compute_colored_contrast_image(
-                                        &self.source_image,
-                                         &self.source_brightness,
-                                          &self.target_brightness
-                                    ),
+                                    ViewState::ContrastImage =>
+                                        compute_contrast_image(
+                                            &self.gray_image,
+                                            &self.source_brightness,
+                                            &self.target_brightness
+                                        ),
+                                    ViewState::ColoredContrastImage =>
+                                        compute_colored_contrast_image(
+                                            &self.source_image,
+                                            &self.source_brightness,
+                                            &self.target_brightness
+                                        ),
                                     _ => panic!("Unexpected state"),
                                 };
-                                RetainedImage::from_color_image("contrast image", image).show(ui)
+                                RetainedImage::from_color_image("contrast image", image).show(ui);
                             }
                         }
                         ViewState::LowPassFilterSourceImage => {
                             let image = compute_low_pass_filter(&self.source_image);
-                            RetainedImage::from_color_image("low pass filter source image", image).show(ui)
+                            RetainedImage::from_color_image(
+                                "low pass filter source image",
+                                image
+                            ).show(ui);
                         }
                         ViewState::LowPassFilterGrayscaleImage => {
                             let image = compute_low_pass_filter(&self.gray_image);
-                            RetainedImage::from_color_image("low pass filter target image", image).show(ui)
+                            RetainedImage::from_color_image(
+                                "low pass filter target image",
+                                image
+                            ).show(ui);
                         }
-                    };
+                    }
                     match self.state {
                         ViewState::SourceImage | ViewState::GrayscaleImage => {
                             let plot = plot::Plot::new("source image brightness bar chart");
                             plot.show(ui, |plot_ui| {
-                                plot_ui.bar_chart(BarChart::new(self.source_brightness_bar_chart.clone()))
+                                plot_ui.bar_chart(
+                                    BarChart::new(self.source_brightness_bar_chart.clone())
+                                )
                             });
                         }
                         ViewState::ContrastImage => {
                             if self.target_brightness.min >= self.target_brightness.max {
-                                ui.heading(format!(
-                                    "Target brightness minimal value={} must be lower than maximum value={}",
-                                    self.target_brightness.min, self.target_brightness.max
-                                ));
+                                ui.heading(
+                                    format!(
+                                        "Target brightness minimal value={} must be lower than maximum value={}",
+                                        self.target_brightness.min,
+                                        self.target_brightness.max
+                                    )
+                                );
                             } else {
-                            let plot = plot::Plot::new("target image brightness bar chart");
-                            let chart = find_bar_chart(&compute_contrast_image(
-                                &self.gray_image,
-                                &self.source_brightness,
-                                &self.target_brightness,
-                            )).iter().enumerate().map(|(x, y)| plot::Bar::new(x as f64, *y as f64)).collect();
-                            plot.show(ui, |plot_ui| {
-                                plot_ui.bar_chart(BarChart::new(chart))
-                            });
-                        }
+                                let plot = plot::Plot::new("target image brightness bar chart");
+                                let chart = find_bar_chart(
+                                    &compute_contrast_image(
+                                        &self.gray_image,
+                                        &self.source_brightness,
+                                        &self.target_brightness
+                                    )
+                                )
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(x, y)| plot::Bar::new(x as f64, *y as f64))
+                                    .collect();
+                                plot.show(ui, |plot_ui| {
+                                    plot_ui.bar_chart(BarChart::new(chart))
+                                });
+                            }
                         }
                         ViewState::ColoredContrastImage => {
                             if self.target_brightness.min >= self.target_brightness.max {
-                                ui.heading(format!(
-                                    "Target brightness minimal value={} must be lower than maximum value={}",
-                                    self.target_brightness.min, self.target_brightness.max
-                                ));
+                                ui.heading(
+                                    format!(
+                                        "Target brightness minimal value={} must be lower than maximum value={}",
+                                        self.target_brightness.min,
+                                        self.target_brightness.max
+                                    )
+                                );
                             } else {
-                            let plot = plot::Plot::new("target image brightness bar chart");
-                            let chart = find_bar_chart(&compute_colored_contrast_image(
-                                &self.source_image,
-                                &self.source_brightness,
-                                &self.target_brightness,
-                            )).iter().enumerate().map(|(x, y)| plot::Bar::new(x as f64, *y as f64)).collect();
-                            plot.show(ui, |plot_ui| {
-                                plot_ui.bar_chart(BarChart::new(chart))
-                            });
+                                let plot = plot::Plot::new("target image brightness bar chart");
+                                let chart = find_bar_chart(
+                                    &compute_colored_contrast_image(
+                                        &self.source_image,
+                                        &self.source_brightness,
+                                        &self.target_brightness
+                                    )
+                                )
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(x, y)| plot::Bar::new(x as f64, *y as f64))
+                                    .collect();
+                                plot.show(ui, |plot_ui| {
+                                    plot_ui.bar_chart(BarChart::new(chart))
+                                });
+                            }
                         }
-                        }
-                        _ => ()
+                        _ => (),
                     }
                 })
             });
@@ -415,10 +482,10 @@ fn compute_pixel_brightness(pixel: Color32) -> u8 {
     let blue = pixel.b() as f32;
 
     let result = 0.3 * red + 0.59 * green + 0.11 * blue;
-    if result > u8::MAX as f32 {
+    if result > (u8::MAX as f32) {
         u8::MAX
     } else {
-    result.round() as u8
+        result.round() as u8
     }
 }
 
