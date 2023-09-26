@@ -147,7 +147,7 @@ trait ImageOperations {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct Brightness {
     min: u8,
     max: u8,
@@ -317,7 +317,7 @@ impl eframe::App for Application {
                             ui.horizontal(|ui| {
                                 ui.label("Brightness:");
 
-                                let mut input_brightness = Brightness::default();
+                                let mut input_brightness = self.target_brightness.clone();
                                 ui.label("min: ");
                                 if
                                     ui
@@ -345,7 +345,10 @@ impl eframe::App for Application {
                                     }
                                 }
 
-                                if input_brightness != self.target_brightness {
+                                if
+                                    input_brightness.min < input_brightness.max &&
+                                    input_brightness != self.target_brightness
+                                {
                                     self.target_brightness = input_brightness;
                                     match self.state {
                                         ViewState::GrayscaleContrast => {
@@ -394,20 +397,7 @@ impl eframe::App for Application {
                                 self.grayscale_image.bar_chart.clone(),
                             ),
                         ViewState::GrayscaleContrast => {
-                            if self.target_brightness.min >= self.target_brightness.max {
-                                ui.heading(
-                                    format!(
-                                        "Target brightness minimal value={} must be lower than maximum value={}",
-                                        self.target_brightness.min,
-                                        self.target_brightness.max
-                                    )
-                                );
-                                (
-                                    "default grayscale image",
-                                    self.grayscale_image.data.clone(),
-                                    self.grayscale_image.bar_chart.clone(),
-                                )
-                            } else if let Some(image) = &self.grayscale_contrast_image {
+                            if let Some(image) = &self.grayscale_contrast_image {
                                 ("contrast image", image.data.clone(), image.bar_chart.clone())
                             } else {
                                 (
@@ -418,20 +408,7 @@ impl eframe::App for Application {
                             }
                         }
                         ViewState::ColoredContrast => {
-                            if self.target_brightness.min >= self.target_brightness.max {
-                                ui.heading(
-                                    format!(
-                                        "Target brightness minimal value={} must be lower than maximum value={}",
-                                        self.target_brightness.min,
-                                        self.target_brightness.max
-                                    )
-                                );
-                                (
-                                    "default colored image",
-                                    self.source_image.data.clone(),
-                                    self.source_image.bar_chart.clone(),
-                                )
-                            } else if let Some(image) = &self.contrast_image {
+                            if let Some(image) = &self.contrast_image {
                                 (
                                     "colored contrast image",
                                     image.data.clone(),
@@ -486,8 +463,10 @@ fn compute_g(f_cur: u32, f_min: u32, f_max: u32, g_min: u32, g_max: u32) -> u8 {
 }
 
 fn main() -> eframe::Result<()> {
-    let mut options = eframe::NativeOptions::default();
-    options.initial_window_size = Option::from(egui::Vec2::new(1000f32, 700f32));
+    let options = eframe::NativeOptions {
+        initial_window_size: Option::from(egui::Vec2::new(1000f32, 700f32)),
+        ..Default::default()
+    };
     eframe::run_native(
         "Image processing",
         options,
