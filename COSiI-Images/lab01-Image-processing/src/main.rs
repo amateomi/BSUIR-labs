@@ -280,7 +280,7 @@ impl Default for Application {
 impl eframe::App for Application {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal(|ui| {
+            ui.vertical_centered_justified(|ui| {
                 if ui.button("<-").clicked() {
                     self.state = match self.state {
                         ViewState::SourceImage => ViewState::LowPassFilterGrayscale,
