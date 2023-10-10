@@ -1,6 +1,5 @@
 use eframe::egui;
 use nistrs::prelude::*;
-use rand::Rng;
 
 fn main() -> eframe::Result<()> {
     eframe::run_native(
@@ -15,22 +14,33 @@ enum Tab {
     LehmerFirst,
     LehmerSecond,
     LehmerThird,
+    MiddleProductFirst,
+    MiddleProductSecond,
+    MiddleProductThird,
+    LFSRFirst,
+    LFSRSecond,
+    LFSRThird,
 }
 
 struct Application {
     current_tab: Tab,
 
-    lehmer: ApplicationGeneratorContent<LehmerRandomNumberGenerator>,
-
     lehmer_seed_field: String,
     lehmer_a_field: String,
     lehmer_m_field: String,
+
+    lehmer: ApplicationGeneratorContent<LehmerRandomNumberGenerator>,
+    middle_product: ApplicationGeneratorContent<MiddleProductRandomNumberGenerator>,
+    lfsr: ApplicationGeneratorContent<LFSRRandomNumberGenerator>,
 }
 
 impl Default for Application {
     fn default() -> Self {
         Self {
             current_tab: Tab::LehmerFirst,
+            lehmer_seed_field: String::default(),
+            lehmer_a_field: String::default(),
+            lehmer_m_field: String::default(),
             lehmer: ApplicationGeneratorContent::new(
                 LehmerRandomNumberGenerator::new(
                     LehmerRandomNumberGenerator::SEED,
@@ -38,9 +48,15 @@ impl Default for Application {
                     LehmerRandomNumberGenerator::M
                 )
             ),
-            lehmer_seed_field: String::default(),
-            lehmer_a_field: String::default(),
-            lehmer_m_field: String::default(),
+            middle_product: ApplicationGeneratorContent::new(
+                MiddleProductRandomNumberGenerator::new(
+                    MiddleProductRandomNumberGenerator::R0,
+                    MiddleProductRandomNumberGenerator::R1
+                )
+            ),
+            lfsr: ApplicationGeneratorContent::new(
+                LFSRRandomNumberGenerator::new(LFSRRandomNumberGenerator::SEED)
+            ),
         }
     }
 }
@@ -56,6 +72,18 @@ impl eframe::App for Application {
                         Tab::LehmerSecond
                     } else if ui.button("Lehmer 100 000 000 samples").clicked() {
                         Tab::LehmerThird
+                    } else if ui.button("Middle product 10 000 samples").clicked() {
+                        Tab::MiddleProductFirst
+                    } else if ui.button("Middle product 500 000 samples").clicked() {
+                        Tab::MiddleProductSecond
+                    } else if ui.button("Middle product 100 000 000 samples").clicked() {
+                        Tab::MiddleProductThird
+                    } else if ui.button("LFSR 10 000 samples").clicked() {
+                        Tab::LFSRFirst
+                    } else if ui.button("LFSR 500 000 samples").clicked() {
+                        Tab::LFSRSecond
+                    } else if ui.button("LFSR 100 000 000 samples").clicked() {
+                        Tab::LFSRThird
                     } else {
                         self.current_tab
                     };
@@ -88,22 +116,34 @@ impl eframe::App for Application {
                             }
                         });
                     }
+                    _ => {}
                 }
 
-                let generator = match self.current_tab {
+                let generator: &mut dyn RandomNumberGenerator = match self.current_tab {
                     Tab::LehmerFirst | Tab::LehmerSecond | Tab::LehmerThird =>
-                        &mut self.lehmer.generator,
+                        self.lehmer.generator.as_mut(),
+                    Tab::MiddleProductFirst | Tab::MiddleProductSecond | Tab::MiddleProductThird =>
+                        self.middle_product.generator.as_mut(),
+                    Tab::LFSRFirst | Tab::LFSRSecond | Tab::LFSRThird =>
+                        self.lfsr.generator.as_mut(),
                 };
                 let tab_content = match self.current_tab {
                     Tab::LehmerFirst => &mut self.lehmer.first_tab,
                     Tab::LehmerSecond => &mut self.lehmer.second_tab,
                     Tab::LehmerThird => &mut self.lehmer.third_tab,
+                    Tab::MiddleProductFirst => &mut self.middle_product.first_tab,
+                    Tab::MiddleProductSecond => &mut self.middle_product.second_tab,
+                    Tab::MiddleProductThird => &mut self.middle_product.third_tab,
+                    Tab::LFSRFirst => &mut self.lfsr.first_tab,
+                    Tab::LFSRSecond => &mut self.lfsr.second_tab,
+                    Tab::LFSRThird => &mut self.lfsr.third_tab,
                 };
 
                 if ui.button("recompute tests").clicked() {
                     let mut samples = Vec::<u64>::new();
                     samples.resize(tab_content.samples_count, 0);
-                    generator.clear_state().generate(samples.as_mut_slice());
+                    generator.clear_state();
+                    generator.generate(samples.as_mut_slice());
                     *tab_content = ApplicationTabContent::new(samples);
                 }
 
@@ -112,7 +152,7 @@ impl eframe::App for Application {
                         .iter()
                         .enumerate()
                         .for_each(|(i, res)| {
-                            ui.label(format!("Test{}: {}", i + 1, res));
+                            ui.label(format!("Test {}: {}", i + 1, res));
                         })
                 });
                 ui.label(format!("Expected value: {}", tab_content.expected_value));
@@ -129,10 +169,10 @@ impl eframe::App for Application {
 
 const SAMPLES_FIRST_COUNT: usize = 10_000;
 const SAMPLES_SECOND_COUNT: usize = 500_000;
-const SAMPLES_THIRD_COUNT: usize = 100_000_000;
+const SAMPLES_THIRD_COUNT: usize = 100_000_00;
 
 struct ApplicationGeneratorContent<R> where R: RandomNumberGenerator {
-    generator: R,
+    generator: Box<R>,
     first_tab: ApplicationTabContent,
     second_tab: ApplicationTabContent,
     third_tab: ApplicationTabContent,
@@ -148,16 +188,17 @@ impl<R> ApplicationGeneratorContent<R> where R: RandomNumberGenerator {
         second_samples.resize(SAMPLES_SECOND_COUNT, 0);
         third_samples.resize(SAMPLES_THIRD_COUNT, 0);
 
-        generator
-            .generate(first_samples.as_mut_slice())
-            .clear_state()
-            .generate(second_samples.as_mut_slice())
-            .clear_state()
-            .generate(third_samples.as_mut_slice())
-            .clear_state();
+        generator.generate(first_samples.as_mut_slice());
+        generator.clear_state();
+
+        generator.generate(second_samples.as_mut_slice());
+        generator.clear_state();
+
+        generator.generate(third_samples.as_mut_slice());
+        generator.clear_state();
 
         Self {
-            generator,
+            generator: Box::new(generator),
             first_tab: ApplicationTabContent::new(first_samples),
             second_tab: ApplicationTabContent::new(second_samples),
             third_tab: ApplicationTabContent::new(third_samples),
@@ -202,7 +243,10 @@ impl ApplicationTabContent {
 }
 
 fn compute_expected_value(numbers: &[u64]) -> f64 {
-    let sum = numbers.iter().sum::<u64>() as f64;
+    let sum = numbers
+        .iter()
+        .map(|x| *x as u128)
+        .sum::<u128>() as f64;
     let count = numbers.len() as f64;
     sum / count
 }
@@ -231,7 +275,7 @@ fn generate_bar_chart(numbers: &[u64]) -> Vec<egui_plot::Bar> {
     let mut bar_chart_counter = [0usize; (u8::MAX as usize) + 1];
     for n in numbers {
         let mapped_value = BAR_CHART_MIN + slope * ((n - min) as f64);
-        let index = mapped_value as usize;
+        let index = mapped_value.round() as usize;
         bar_chart_counter[index] += 1;
     }
     bar_chart_counter
@@ -242,15 +286,14 @@ fn generate_bar_chart(numbers: &[u64]) -> Vec<egui_plot::Bar> {
 }
 
 trait RandomNumberGenerator {
-    fn clear_state(&mut self) -> &mut Self;
+    fn clear_state(&mut self);
 
     fn get_next_random_number(&mut self) -> u64;
 
-    fn generate(&mut self, numbers: &mut [u64]) -> &mut Self {
+    fn generate(&mut self, numbers: &mut [u64]) {
         numbers.iter_mut().for_each(|n| {
             *n = self.get_next_random_number();
         });
-        self
     }
 }
 
@@ -263,8 +306,8 @@ struct LehmerRandomNumberGenerator {
 
 impl LehmerRandomNumberGenerator {
     const SEED: u64 = 7;
-    const A: u64 = 75;
-    const M: u64 = (u16::MAX as u64) + 2;
+    const A: u64 = 16_807;
+    const M: u64 = i32::MAX as u64;
 
     fn new(seed: u64, a: u64, m: u64) -> Self {
         Self { seed, a, m, prev: seed }
@@ -272,13 +315,83 @@ impl LehmerRandomNumberGenerator {
 }
 
 impl RandomNumberGenerator for LehmerRandomNumberGenerator {
-    fn clear_state(&mut self) -> &mut Self {
+    fn clear_state(&mut self) {
         self.prev = self.seed;
-        self
     }
 
     fn get_next_random_number(&mut self) -> u64 {
-        self.prev = (self.a * self.prev) % self.m;
+        self.prev = self.a.overflowing_mul(self.prev).0 % self.m;
         self.prev
+    }
+}
+
+struct MiddleProductRandomNumberGenerator {
+    r0: u64,
+    r1: u64,
+    multiplier: u64,
+    random_number: u64,
+}
+
+impl MiddleProductRandomNumberGenerator {
+    const R0: u64 = 0xffeeddccbbaa9988;
+    const R1: u64 = 0x1122334455667788;
+
+    fn new(r0: u64, r1: u64) -> Self {
+        Self { r0, r1, multiplier: r0, random_number: r1 }
+    }
+}
+
+impl RandomNumberGenerator for MiddleProductRandomNumberGenerator {
+    fn clear_state(&mut self) {
+        self.multiplier = self.r0;
+        self.random_number = self.r1;
+    }
+
+    fn get_next_random_number(&mut self) -> u64 {
+        let multiply_result = (self.multiplier as u128) * (self.random_number as u128);
+        self.multiplier = self.random_number;
+        self.random_number = ((multiply_result & 0x00000000_ffffffff_ffffffff_00000000) >>
+            32) as u64;
+        self.random_number
+    }
+}
+
+struct LFSRRandomNumberGenerator {
+    seed: u64,
+    shift_register: u64,
+}
+
+impl LFSRRandomNumberGenerator {
+    const SEED: u64 = 0x0f0f0f0f_0f0f0f0f;
+
+    fn new(seed: u64) -> Self {
+        Self {
+            seed,
+            shift_register: seed,
+        }
+    }
+}
+
+impl RandomNumberGenerator for LFSRRandomNumberGenerator {
+    fn clear_state(&mut self) {
+        self.shift_register = self.seed;
+    }
+
+    fn get_next_random_number(&mut self) -> u64 {
+        let mut result = 0;
+        for i in 0..64 {
+            self.shift_register =
+                ((((self.shift_register >> 63) ^
+                    (self.shift_register >> 62) ^
+                    (self.shift_register >> 60) ^
+                    (self.shift_register >> 59) ^
+                    self.shift_register) &
+                    1) <<
+                    63) |
+                (self.shift_register >> 1);
+            let bit = self.shift_register & 1;
+            result |= bit << i;
+        }
+        result
     }
 }
