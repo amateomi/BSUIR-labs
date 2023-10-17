@@ -1,4 +1,4 @@
-use eframe::egui;
+use eframe::{ egui, epaint::{ Color32, Shadow } };
 use nistrs::prelude::*;
 
 fn main() -> eframe::Result<()> {
@@ -63,113 +63,234 @@ impl Default for Application {
 
 impl eframe::App for Application {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical(|ui| {
-                ui.horizontal(|ui| {
-                    self.current_tab = if ui.button("Lehmer 10 000 samples").clicked() {
-                        Tab::LehmerFirst
-                    } else if ui.button("Lehmer 500 000 samples").clicked() {
-                        Tab::LehmerSecond
-                    } else if ui.button("Lehmer 100 000 000 samples").clicked() {
-                        Tab::LehmerThird
-                    } else if ui.button("Middle product 10 000 samples").clicked() {
-                        Tab::MiddleProductFirst
-                    } else if ui.button("Middle product 500 000 samples").clicked() {
-                        Tab::MiddleProductSecond
-                    } else if ui.button("Middle product 100 000 000 samples").clicked() {
-                        Tab::MiddleProductThird
-                    } else if ui.button("LFSR 10 000 samples").clicked() {
-                        Tab::LFSRFirst
-                    } else if ui.button("LFSR 500 000 samples").clicked() {
-                        Tab::LFSRSecond
-                    } else if ui.button("LFSR 100 000 000 samples").clicked() {
-                        Tab::LFSRThird
-                    } else {
-                        self.current_tab
-                    };
-                });
+        ctx.set_pixels_per_point(2.0);
+        let frame = egui::containers::Frame {
+            inner_margin: egui::Margin::default(),
+            outer_margin: egui::Margin::default(),
+            rounding: egui::Rounding { nw: 1.0, ne: 1.0, se: 1.0, sw: 1.0 },
+            fill: Color32::WHITE,
+            stroke: egui::Stroke::new(0.0, Color32::GOLD),
+            shadow: Shadow::small_light(),
+        };
+        let tab_content = match self.current_tab {
+            Tab::LehmerFirst => &mut self.lehmer.first_tab,
+            Tab::LehmerSecond => &mut self.lehmer.second_tab,
+            Tab::LehmerThird => &mut self.lehmer.third_tab,
+            Tab::MiddleProductFirst => &mut self.middle_product.first_tab,
+            Tab::MiddleProductSecond => &mut self.middle_product.second_tab,
+            Tab::MiddleProductThird => &mut self.middle_product.third_tab,
+            Tab::LFSRFirst => &mut self.lfsr.first_tab,
+            Tab::LFSRSecond => &mut self.lfsr.second_tab,
+            Tab::LFSRThird => &mut self.lfsr.third_tab,
+        };
+        egui::CentralPanel
+            ::default()
+            .frame(frame)
+            .show(ctx, |ui| {
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
+                            self.current_tab = if
+                                ui
+                                    .add_sized(
+                                        [250.0, 30.0],
+                                        egui::Button
+                                            ::new("Lehmer 10 000 samples")
+                                            .fill(Color32::LIGHT_GREEN)
+                                    )
+                                    .clicked()
+                            {
+                                Tab::LehmerFirst
+                            } else if
+                                ui
+                                    .add_sized(
+                                        [250.0, 30.0],
+                                        egui::Button
+                                            ::new("Lehmer 500 000 samples")
+                                            .fill(Color32::LIGHT_GREEN)
+                                    )
+                                    .clicked()
+                            {
+                                Tab::LehmerSecond
+                            } else if
+                                ui
+                                    .add_sized(
+                                        [250.0, 30.0],
+                                        egui::Button
+                                            ::new("Lehmer 100 000 000 samples")
+                                            .fill(Color32::LIGHT_GREEN)
+                                    )
+                                    .clicked()
+                            {
+                                Tab::LehmerThird
+                            } else if
+                                ui
+                                    .add_sized(
+                                        [250.0, 30.0],
+                                        egui::Button
+                                            ::new("Middle product 10 000 samples")
+                                            .fill(Color32::LIGHT_GREEN)
+                                    )
+                                    .clicked()
+                            {
+                                Tab::MiddleProductFirst
+                            } else if
+                                ui
+                                    .add_sized(
+                                        [250.0, 30.0],
+                                        egui::Button
+                                            ::new("Middle product 500 000 samples")
+                                            .fill(Color32::LIGHT_GREEN)
+                                    )
+                                    .clicked()
+                            {
+                                Tab::MiddleProductSecond
+                            } else if
+                                ui
+                                    .add_sized(
+                                        [250.0, 30.0],
+                                        egui::Button
+                                            ::new("Middle product 100 000 000 samples")
+                                            .fill(Color32::LIGHT_GREEN)
+                                    )
+                                    .clicked()
+                            {
+                                Tab::MiddleProductThird
+                            } else if
+                                ui
+                                    .add_sized(
+                                        [250.0, 30.0],
+                                        egui::Button
+                                            ::new("LFSR 10 000 samples")
+                                            .fill(Color32::LIGHT_GREEN)
+                                    )
+                                    .clicked()
+                            {
+                                Tab::LFSRFirst
+                            } else if
+                                ui
+                                    .add_sized(
+                                        [250.0, 30.0],
+                                        egui::Button
+                                            ::new("LFSR 500 000 samples")
+                                            .fill(Color32::LIGHT_GREEN)
+                                    )
+                                    .clicked()
+                            {
+                                Tab::LFSRSecond
+                            } else if
+                                ui
+                                    .add_sized(
+                                        [250.0, 30.0],
+                                        egui::Button
+                                            ::new("LFSR 100 000 000 samples")
+                                            .fill(Color32::LIGHT_GREEN)
+                                    )
+                                    .clicked()
+                            {
+                                Tab::LFSRThird
+                            } else {
+                                self.current_tab
+                            };
+                        });
+                        egui_plot::Plot
+                            ::new("bar chart")
+                            .show_background(false)
+                            .show(ui, |plot_ui|
+                                plot_ui.bar_chart(
+                                    egui_plot::BarChart
+                                        ::new(tab_content.bar_chart.clone())
+                                        .color(Color32::LIGHT_GREEN)
+                                )
+                            );
+                    });
 
-                match self.current_tab {
-                    Tab::LehmerFirst | Tab::LehmerSecond | Tab::LehmerThird => {
-                        ui.horizontal(|ui| {
-                            ui.label("seed: ");
-                            if ui.text_edit_singleline(&mut self.lehmer_seed_field).changed() {
-                                if let Ok(seed) = self.lehmer_a_field.parse::<u64>() {
-                                    self.lehmer.generator.seed = seed;
-                                }
-                            }
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("a:     ");
-                            if ui.text_edit_singleline(&mut self.lehmer_a_field).changed() {
-                                if let Ok(a) = self.lehmer_a_field.parse::<u64>() {
-                                    self.lehmer.generator.a = a;
-                                }
-                            }
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("m:    ");
-                            if ui.text_edit_singleline(&mut self.lehmer_m_field).changed() {
-                                if let Ok(m) = self.lehmer_m_field.parse::<u64>() {
-                                    self.lehmer.generator.m = m;
-                                }
-                            }
-                        });
+                    if
+                        ui
+                            .add_sized(
+                                [250.0, 30.0],
+                                egui::Button::new("Recompute tests").fill(Color32::GREEN)
+                            )
+                            .clicked()
+                    {
+                        let generator: &mut dyn RandomNumberGenerator = match self.current_tab {
+                            Tab::LehmerFirst | Tab::LehmerSecond | Tab::LehmerThird =>
+                                self.lehmer.generator.as_mut(),
+                            | Tab::MiddleProductFirst
+                            | Tab::MiddleProductSecond
+                            | Tab::MiddleProductThird => self.middle_product.generator.as_mut(),
+                            Tab::LFSRFirst | Tab::LFSRSecond | Tab::LFSRThird =>
+                                self.lfsr.generator.as_mut(),
+                        };
+
+                        let mut samples = Vec::<u64>::new();
+                        samples.resize(tab_content.samples_count, 0);
+                        generator.clear_state();
+                        generator.generate(samples.as_mut_slice());
+                        *tab_content = ApplicationTabContent::new(samples);
                     }
-                    _ => {}
-                }
 
-                let generator: &mut dyn RandomNumberGenerator = match self.current_tab {
-                    Tab::LehmerFirst | Tab::LehmerSecond | Tab::LehmerThird =>
-                        self.lehmer.generator.as_mut(),
-                    Tab::MiddleProductFirst | Tab::MiddleProductSecond | Tab::MiddleProductThird =>
-                        self.middle_product.generator.as_mut(),
-                    Tab::LFSRFirst | Tab::LFSRSecond | Tab::LFSRThird =>
-                        self.lfsr.generator.as_mut(),
-                };
-                let tab_content = match self.current_tab {
-                    Tab::LehmerFirst => &mut self.lehmer.first_tab,
-                    Tab::LehmerSecond => &mut self.lehmer.second_tab,
-                    Tab::LehmerThird => &mut self.lehmer.third_tab,
-                    Tab::MiddleProductFirst => &mut self.middle_product.first_tab,
-                    Tab::MiddleProductSecond => &mut self.middle_product.second_tab,
-                    Tab::MiddleProductThird => &mut self.middle_product.third_tab,
-                    Tab::LFSRFirst => &mut self.lfsr.first_tab,
-                    Tab::LFSRSecond => &mut self.lfsr.second_tab,
-                    Tab::LFSRThird => &mut self.lfsr.third_tab,
-                };
+                    ui.horizontal(|ui| {
+                        tab_content.test_results
+                            .iter()
+                            .enumerate()
+                            .for_each(|(i, res)| {
+                                ui.label(format!("Test {}: {}", i + 1, res));
+                            })
+                    });
 
-                if ui.button("recompute tests").clicked() {
-                    let mut samples = Vec::<u64>::new();
-                    samples.resize(tab_content.samples_count, 0);
-                    generator.clear_state();
-                    generator.generate(samples.as_mut_slice());
-                    *tab_content = ApplicationTabContent::new(samples);
-                }
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Expected value: {}", tab_content.expected_value));
+                        ui.label(
+                            format!(
+                                "Reference expected value: {}",
+                                tab_content.reference_expected_value
+                            )
+                        );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Variance: {}", tab_content.variance));
+                        ui.label(format!("Reference variance: {}", tab_content.reference_variance));
+                    });
 
-                ui.horizontal(|ui| {
-                    tab_content.test_results
-                        .iter()
-                        .enumerate()
-                        .for_each(|(i, res)| {
-                            ui.label(format!("Test {}: {}", i + 1, res));
-                        })
+                    match self.current_tab {
+                        Tab::LehmerFirst | Tab::LehmerSecond | Tab::LehmerThird => {
+                            ui.label(" Lehmer parameters:");
+                            ui.horizontal(|ui| {
+                                ui.label(" seed: ");
+                                if ui.text_edit_singleline(&mut self.lehmer_seed_field).changed() {
+                                    if let Ok(seed) = self.lehmer_a_field.parse::<u64>() {
+                                        self.lehmer.generator.seed = seed;
+                                    }
+                                }
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label(" a:        ");
+                                if ui.text_edit_singleline(&mut self.lehmer_a_field).changed() {
+                                    if let Ok(a) = self.lehmer_a_field.parse::<u64>() {
+                                        self.lehmer.generator.a = a;
+                                    }
+                                }
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label(" m:      ");
+                                if ui.text_edit_singleline(&mut self.lehmer_m_field).changed() {
+                                    if let Ok(m) = self.lehmer_m_field.parse::<u64>() {
+                                        self.lehmer.generator.m = m;
+                                    }
+                                }
+                            });
+                        }
+                        _ => {}
+                    }
                 });
-                ui.label(format!("Expected value: {}", tab_content.expected_value));
-                ui.label(format!("Variance: {}", tab_content.variance));
-                egui_plot::Plot
-                    ::new("bar chart")
-                    .show(ui, |plot_ui|
-                        plot_ui.bar_chart(egui_plot::BarChart::new(tab_content.bar_chart.clone()))
-                    );
             });
-        });
     }
 }
 
 const SAMPLES_FIRST_COUNT: usize = 10_000;
 const SAMPLES_SECOND_COUNT: usize = 500_000;
-const SAMPLES_THIRD_COUNT: usize = 100_000_00;
+const SAMPLES_THIRD_COUNT: usize = 100_000_000;
 
 struct ApplicationGeneratorContent<R> where R: RandomNumberGenerator {
     generator: Box<R>,
@@ -210,7 +331,9 @@ struct ApplicationTabContent {
     samples_count: usize,
     test_results: [bool; 8],
     expected_value: f64,
+    reference_expected_value: f64,
     variance: f64,
+    reference_variance: f64,
     bar_chart: Vec<egui_plot::Bar>,
 }
 
@@ -236,7 +359,9 @@ impl ApplicationTabContent {
                 overlapping_template_test(&bits, 8).0,
             ],
             expected_value: compute_expected_value(&samples),
+            reference_expected_value: compute_reference_expected_value(),
             variance: compute_variance(&samples),
+            reference_variance: compute_reference_variance(&samples),
             bar_chart: generate_bar_chart(&samples),
         }
     }
@@ -251,8 +376,25 @@ fn compute_expected_value(numbers: &[u64]) -> f64 {
     sum / count
 }
 
+fn compute_reference_expected_value() -> f64 {
+    (u64::MAX as f64) / 2.0
+}
+
 fn compute_variance(numbers: &[u64]) -> f64 {
     let expected_value = compute_expected_value(numbers);
+    let sum = numbers
+        .iter()
+        .map(|x| {
+            let diff = (*x as f64) - expected_value;
+            diff * diff
+        })
+        .sum::<f64>();
+    let count = numbers.len() as f64;
+    sum / count
+}
+
+fn compute_reference_variance(numbers: &[u64]) -> f64 {
+    let expected_value = compute_reference_expected_value();
     let sum = numbers
         .iter()
         .map(|x| {
@@ -306,8 +448,8 @@ struct LehmerRandomNumberGenerator {
 
 impl LehmerRandomNumberGenerator {
     const SEED: u64 = 7;
-    const A: u64 = 16_807;
-    const M: u64 = i32::MAX as u64;
+    const A: u64 = 16_666;
+    const M: u64 = 999999999767;
 
     fn new(seed: u64, a: u64, m: u64) -> Self {
         Self { seed, a, m, prev: seed }
