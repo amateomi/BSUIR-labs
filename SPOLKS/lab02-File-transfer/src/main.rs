@@ -5,7 +5,7 @@ use std::{
     env,
     fs::File,
 };
-use socket2::{ Socket, Domain, Type, Protocol };
+use socket2::{ Socket, Domain, Type, Protocol, SockAddr };
 use local_ip_address::local_ip;
 use chrono::Local;
 
@@ -20,11 +20,54 @@ fn main() {
         let arg: &str = &args[1];
         match arg {
             "server" => run_server(),
-            "client" => run_client(),
+            "client" => {
+                if args.len() == 3 {
+                    let server_ip: SocketAddr = args[2].parse().unwrap();
+                    run_client(server_ip.into());
+                } else {
+                    eprintln!("Must specify server <ip:port>");
+                }
+            }
             _ => eprintln!("Must specify one argument: server or client"),
         }
     } else {
-        eprintln!("Must specify one argument: server or client");
+        eprintln!("Must specify at least one argument: <server> or <client>");
+    }
+}
+
+fn run_client(server_ip: SockAddr) {
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).expect(
+        "Socket should be creatable"
+    );
+    socket.connect(&server_ip).expect("Connection to server should work");
+    println!("Connection to server established");
+
+    let mut stream: TcpStream = socket.into();
+
+    for line in io::stdin().lines() {
+        match line {
+            Ok(line) if !line.is_empty() => {
+                let line = line + "\n";
+                stream.write_all(line.as_bytes()).unwrap();
+
+                let mut reader = io::BufReader::new(&stream);
+                let mut buffer = Vec::<u8>::new();
+
+                match reader.read_until(b'\0', &mut buffer) {
+                    Ok(_) => {
+                        match String::from_utf8(buffer.clone()) {
+                            Ok(text) => println!("{}", text),
+                            Err(error) =>
+                                eprintln!("Failed to parse buffer to utf8 string: {error}"),
+                        }
+                        buffer.clear();
+                    }
+                    Err(error) => eprintln!("Failed to read from server: {error}"),
+                }
+            }
+            Err(error) => eprintln!("Failed to read line: {error}"),
+            _ => {}
+        }
     }
 }
 
@@ -51,8 +94,6 @@ fn run_server() {
         }
     }
 }
-
-fn run_client() {}
 
 fn create_tcp_listener(ip: IpAddr, port: u16, connections_limit: c_int) -> TcpListener {
     let socket_address = SocketAddr::new(ip, port);
@@ -91,19 +132,19 @@ fn handle_connection(stream: TcpStream, file_transfer_info: &mut Option<FileTran
                     let parameters = &tokens[1..];
                     match *command_name {
                         "echo" => {
-                            println!("echo command");
+                            println!("-- echo command");
                             if let Err(error) = handle_command_echo(&mut &stream, parameters) {
                                 eprintln!("Echo error: {error}");
                             }
                         }
                         "time" => {
-                            println!("time command");
+                            println!("-- time command");
                             if let Err(error) = handle_command_time(&mut &stream) {
                                 eprintln!("Time error: {error}");
                             }
                         }
                         "close" => {
-                            println!("close command");
+                            println!("-- close command");
                             if let Err(error) = stream.shutdown(std::net::Shutdown::Both) {
                                 eprintln!(
                                     "Failed to close connection to {}: {error}",
@@ -112,11 +153,11 @@ fn handle_connection(stream: TcpStream, file_transfer_info: &mut Option<FileTran
                             }
                         }
                         "upload" => {
-                            println!("upload command");
+                            println!("-- upload command");
                             handle_command_upload();
                         }
                         "download" => {
-                            println!("download command");
+                            println!("-- download command");
                             if let Some(file_path) = parameters.first() {
                                 let mut chunk_id = 0;
                                 if let Some(info) = file_transfer_info {
@@ -168,12 +209,13 @@ fn handle_connection(stream: TcpStream, file_transfer_info: &mut Option<FileTran
     }
 }
 
-fn handle_command_echo(stream: &mut &TcpStream, parameters: &[&str]) -> std::io::Result<()> {
-    stream.write_all(parameters.join(" ").as_bytes())
+fn handle_command_echo(stream: &mut &TcpStream, parameters: &[&str]) -> io::Result<()> {
+    let arguments = parameters.join(" ") + "\0";
+    stream.write_all(arguments.as_bytes())
 }
 
-fn handle_command_time(stream: &mut &TcpStream) -> std::io::Result<()> {
-    let time = Local::now().to_rfc2822();
+fn handle_command_time(stream: &mut &TcpStream) -> io::Result<()> {
+    let time = Local::now().to_rfc2822() + "\0";
     stream.write_all(time.as_bytes())
 }
 
@@ -191,7 +233,7 @@ fn handle_command_upload() {
 fn handle_command_download(
     stream: &mut &TcpStream,
     file_transfer_info: &mut FileTransferInfo
-) -> std::io::Result<()> {
+) -> io::Result<()> {
     let mut file_content = Vec::<u8>::new();
 
     let size = File::open(file_transfer_info.file_path.as_str())?.read_to_end(&mut file_content)?;
@@ -201,12 +243,16 @@ fn handle_command_download(
         println!("chunk: {}", file_transfer_info.chunk_id);
 
         let end = (i + FILE_TRANSACTION_SIZE).min(size);
-        let packet = &file_content[i..end];
 
-        stream.write_all(packet)?;
+        let mut packet: [u8; FILE_TRANSACTION_SIZE + 1] = [0; FILE_TRANSACTION_SIZE + 1];
+        packet[..FILE_TRANSACTION_SIZE].clone_from_slice(&file_content[i..end]);
+        packet[FILE_TRANSACTION_SIZE] = b'\0';
+
+        stream.write_all(packet.as_slice())?;
 
         file_transfer_info.chunk_id += 1;
         i = file_transfer_info.chunk_id * FILE_TRANSACTION_SIZE;
     }
+
     Ok(())
 }
