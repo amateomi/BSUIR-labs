@@ -4,6 +4,7 @@ use std::{
     io::{ self, BufRead, Write, Read },
     env,
     fs::File,
+    str::FromStr,
 };
 use socket2::{ Socket, Domain, Type, Protocol, SockAddr };
 use local_ip_address::local_ip;
@@ -34,6 +35,38 @@ fn main() {
         eprintln!("Must specify at least one argument: <server> or <client>");
     }
 }
+
+enum Command {
+    Echo(Vec<String>),
+    Time,
+    Close,
+    Upload,
+    Download(FileTransferInfo),
+}
+
+impl FromStr for Command {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "echo" => Ok(Command::Echo(Vec::<String>::new())),
+            "time" => Ok(Command::Time),
+            "close" => Ok(Command::Close),
+            "upload" => Ok(Command::Upload),
+            "download" =>
+                Ok(
+                    Command::Download(FileTransferInfo {
+                        client_ip: IpAddr::from_str("0.0.0.0").unwrap(),
+                        file_path: String::new(),
+                        chunk_id: 0,
+                    })
+                ),
+            _ => Err("Unknown command".to_string()),
+        }
+    }
+}
+
+
 
 fn run_client(server_ip: SockAddr) {
     let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).expect(
@@ -129,6 +162,7 @@ fn handle_connection(stream: TcpStream, file_transfer_info: &mut Option<FileTran
                 let tokens: Vec<_> = packet.split_whitespace().collect();
 
                 if let Some(command_name) = tokens.first() {
+                    let command: Command = command_name.parse();
                     let parameters = &tokens[1..];
                     match *command_name {
                         "echo" => {
@@ -237,6 +271,12 @@ fn handle_command_download(
     let mut file_content = Vec::<u8>::new();
 
     let size = File::open(file_transfer_info.file_path.as_str())?.read_to_end(&mut file_content)?;
+    let chunk_count =
+        (((size as f64) / (FILE_TRANSACTION_SIZE as f64)).ceil() as usize) -
+        file_transfer_info.chunk_id;
+
+    let header_packet = format!("{chunk_count}\0");
+    stream.write_all(header_packet.as_bytes())?;
 
     let mut i = file_transfer_info.chunk_id * FILE_TRANSACTION_SIZE;
     while i < size {
