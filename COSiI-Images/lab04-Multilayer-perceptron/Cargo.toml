@@ -1,0 +1,12 @@
+[package]
+name = "lab04_multilayer_perceptron"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+eframe = "0.23.0"
+egui_extras = { version = "0.23.0", features = ["image"] }
+image = { version = "0.24.7", features = ["jpeg"] }
+rand = "0.8.5"
