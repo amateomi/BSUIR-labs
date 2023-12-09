@@ -1,11 +1,11 @@
-use std::{ process::exit, net::IpAddr };
+use std::{net::IpAddr, process::exit};
 
-use log::{ info, error };
 use common::*;
+use log::{error, info};
 
+mod client;
 mod common;
 mod server;
-mod client;
 
 fn main() {
     env_logger::init();
