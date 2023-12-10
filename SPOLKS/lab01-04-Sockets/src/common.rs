@@ -43,14 +43,13 @@ pub enum Protocol {
 pub const PORT: u16 = 6996;
 pub const PAYLOAD_SIZE: usize = 1024;
 pub const FILE_NAME_SIZE: usize = 256;
-pub const DEFAULT_FILE: &str = "bible.txt";
 
 pub type Payload = [u8; PAYLOAD_SIZE];
 pub type FileName = [u8; FILE_NAME_SIZE];
 pub type BlockID = usize;
 pub type FileSize = usize;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     Echo(Payload),
     TimeRequest,
@@ -131,6 +130,7 @@ impl str::FromStr for Command {
             "download" => {
                 Ok(DownloadRequest([0; FILE_NAME_SIZE]).fill_payload(parameters.as_bytes()))
             }
+            "upload" => Ok(UploadRequest([0; FILE_NAME_SIZE]).fill_payload(parameters.as_bytes())),
             _ => Err(CommandParseError(token.to_string())),
         }
     }
@@ -154,11 +154,11 @@ impl fmt::Display for Command {
                 write!(f, "[close]")
             }
             DownloadRequest(payload) => {
-                let file_name = str::from_utf8(payload).unwrap_or(DEFAULT_FILE);
+                let file_name = str::from_utf8(payload).unwrap();
                 write!(f, "[download] file=\"{file_name}\"")
             }
             UploadRequest(payload) => {
-                let file_name = str::from_utf8(payload).unwrap_or(DEFAULT_FILE);
+                let file_name = str::from_utf8(payload).unwrap();
                 write!(f, "[upload] file=\"{file_name}\"")
             }
             FileNotExist => {
