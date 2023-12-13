@@ -1,8 +1,9 @@
+use local_ip_address::linux::local_ip;
 use log::{error, warn};
 use std::{
     fs,
     io::{self, Read},
-    net::{IpAddr, TcpStream},
+    net::{IpAddr, SocketAddr, TcpStream, UdpSocket},
     os::unix::fs::FileExt,
     process::exit,
     str::{self, FromStr},
@@ -10,28 +11,47 @@ use std::{
 
 use crate::common::*;
 
-pub fn run(_protocol: Protocol, ip: IpAddr) {
+pub fn run(protocol: Protocol, ip: IpAddr) {
     let address = (ip, PORT);
-    let mut stream = TcpStream::connect(address).expect("Failed to connect to server");
+    let mut transport = match protocol {
+        Protocol::Tcp => {
+            Transport::Tcp(TcpStream::connect(address).expect("Failed to connect to server"))
+        }
+        Protocol::Udp => {
+            let my_ip = local_ip().unwrap();
+            let my_address = SocketAddr::new(my_ip, 0);
+            let socket = UdpSocket::bind(my_address).expect("Failed to bind to {my_address}");
+            socket
+                .connect(address)
+                .expect("Failed to connect to server");
 
+            let start_command = format!("echo {}", socket.local_addr().unwrap())
+                .parse::<Command>()
+                .expect("Failed to parse start command: {start_command}");
+
+            let mut transport = Transport::Udp(socket);
+            write_command(&mut transport, start_command).expect("Failed to send my ip to server");
+            transport
+        }
+    };
     loop {
-        if let Err(error) = main_loop(&mut stream) {
+        if let Err(error) = main_loop(&mut transport) {
             error!("Error: {error}");
         }
     }
 }
 
-fn main_loop(stream: &mut TcpStream) -> Result<(), io::Error> {
+fn main_loop(transport: &mut Transport) -> io::Result<()> {
     let mut current_block_id = 0;
     loop {
         let command = parse_input();
         match command {
             Command::Echo(_) => {
-                write_command(stream, command)?;
+                write_command(transport, command)?;
             }
             Command::TimeRequest => {
-                write_command(stream, command)?;
-                let response = read_command(stream)?;
+                write_command(transport, command)?;
+                let response = read_command(transport)?;
                 match response {
                     Command::TimeResponse(payload) => {
                         let time = str::from_utf8(&payload).unwrap();
@@ -41,7 +61,7 @@ fn main_loop(stream: &mut TcpStream) -> Result<(), io::Error> {
                 }
             }
             Command::Close => {
-                write_command(stream, command)?;
+                write_command(transport, command)?;
                 exit(0);
             }
             Command::DownloadRequest(file_name) => {
@@ -49,21 +69,21 @@ fn main_loop(stream: &mut TcpStream) -> Result<(), io::Error> {
                     .unwrap()
                     .trim_end_matches('\0')
                     .to_string();
-                write_command(stream, command)?;
-                let mut response = read_command(stream)?;
+                write_command(transport, command)?;
+                let mut response = read_command(transport)?;
                 if response == Command::FileNotExist {
                     error!("File not exist");
                     continue;
                 }
                 if response == Command::LoadResumeAvailable {
-                    write_command(stream, Command::LoadResumeResponse(is_resume_load()))?;
-                    response = read_command(stream)?;
+                    write_command(transport, Command::LoadResumeResponse(is_resume_load()))?;
+                    response = read_command(transport)?;
                 }
                 match response {
                     Command::FirstBlockToLoad(_) => {
                         handle_download(
                             response,
-                            stream,
+                            transport,
                             &current_file_name,
                             &mut current_block_id,
                         )?;
@@ -83,20 +103,23 @@ fn main_loop(stream: &mut TcpStream) -> Result<(), io::Error> {
                         let mut content = Vec::new();
                         file.read_to_end(&mut content).unwrap();
 
-                        write_command(stream, command)?;
+                        write_command(transport, command)?;
 
-                        let mut response = read_command(stream)?;
+                        let mut response = read_command(transport)?;
                         if response == Command::LoadResumeAvailable {
-                            write_command(stream, Command::LoadResumeResponse(is_resume_load()))?;
-                            response = read_command(stream)?;
+                            write_command(
+                                transport,
+                                Command::LoadResumeResponse(is_resume_load()),
+                            )?;
+                            response = read_command(transport)?;
                         }
                         match response {
                             Command::FirstBlockToLoad(block_id) => {
                                 current_block_id = block_id;
-                                write_command(stream, Command::FirstBlockToLoadAcknowledgement)?;
-                                match read_command(stream)? {
+                                write_command(transport, Command::FirstBlockToLoadAcknowledgement)?;
+                                match read_command(transport)? {
                                     Command::FirstBlockToLoadAcknowledgement => {
-                                        handle_upload(stream, content, &mut current_block_id)?
+                                        handle_upload(transport, content, &mut current_block_id)?
                                     }
                                     command => {
                                         error!("Unexpected command: {command}");
@@ -158,20 +181,20 @@ fn is_resume_load() -> bool {
 
 fn handle_download(
     command: Command,
-    stream: &mut TcpStream,
+    transport: &mut Transport,
     current_file_name: &str,
     current_block_id: &mut usize,
-) -> Result<(), io::Error> {
+) -> io::Result<()> {
     match command {
         Command::FirstBlockToLoad(block_id) => {
             if block_id == 0 {
                 fs::File::create(current_file_name)?;
             }
             *current_block_id = block_id;
-            write_command(stream, Command::FirstBlockToLoadAcknowledgement)?;
+            write_command(transport, Command::FirstBlockToLoadAcknowledgement)?;
 
             loop {
-                match read_command(stream)? {
+                match read_command(transport)? {
                     Command::Load(block_id, payload) => {
                         if *current_block_id != block_id {
                             error!("Unexpected block ID: {block_id}");
@@ -183,7 +206,7 @@ fn handle_download(
                         file.write_all_at(&payload, offset)?;
                         file.sync_data()?;
 
-                        write_command(stream, Command::LoadAcknowledgement(*current_block_id))?;
+                        write_command(transport, Command::LoadAcknowledgement(*current_block_id))?;
 
                         *current_block_id += 1;
                     }
@@ -209,23 +232,23 @@ fn handle_download(
 }
 
 fn handle_upload(
-    stream: &mut TcpStream,
+    transport: &mut Transport,
     content: Vec<u8>,
     current_block_id: &mut usize,
-) -> Result<(), io::Error> {
+) -> io::Result<()> {
     loop {
         let begin = *current_block_id * PAYLOAD_SIZE;
         if begin > content.len() {
-            write_command(stream, Command::LoadFinish(content.len()))?;
+            write_command(transport, Command::LoadFinish(content.len()))?;
             break;
         } else {
             let end = ((*current_block_id + 1) * PAYLOAD_SIZE).min(content.len());
             let block = &content[begin..end];
             let response = Command::Load(*current_block_id, [0; PAYLOAD_SIZE]).fill_payload(block);
-            write_command(stream, response)?;
+            write_command(transport, response)?;
         }
         loop {
-            match read_command(stream)? {
+            match read_command(transport)? {
                 Command::LoadAcknowledgement(block_id) => {
                     if block_id != *current_block_id {
                         error!("Unexpected block ID: {block_id}")

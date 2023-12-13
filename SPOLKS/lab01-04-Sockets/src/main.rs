@@ -22,10 +22,8 @@ fn main() {
         error!("Must specify server IP in client mode");
         exit(1);
     }
-    let server_ip: Option<IpAddr> = match server_ip {
-        Some(ip) => Some(ip.parse().expect("Invalid IP format: {ip}")),
-        None => None,
-    };
+    let server_ip: Option<IpAddr> =
+        server_ip.map(|ip| ip.parse().expect("Invalid IP format: {ip}"));
     match mode {
         Mode::Server => server::run(protocol, server_ip),
         Mode::Client => client::run(protocol, server_ip.unwrap()),

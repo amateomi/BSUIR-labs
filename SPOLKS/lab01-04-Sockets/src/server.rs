@@ -1,9 +1,10 @@
 use std::{
     collections::HashMap,
     fs,
-    io::Read,
-    net::{IpAddr, Shutdown, TcpListener, TcpStream},
+    io::{self, Read},
+    net::{IpAddr, Shutdown, SocketAddr, TcpListener, UdpSocket},
     os::unix::fs::FileExt,
+    str,
 };
 
 use chrono::Local;
@@ -33,41 +34,86 @@ struct ClientInfo {
     operation: CurrentOperation,
 }
 
-pub fn run(_protocol: Protocol, ip: Option<IpAddr>) {
+pub fn run(protocol: Protocol, ip: Option<IpAddr>) {
     let mut clients = HashMap::<IpAddr, ClientInfo>::new();
     let ip = match ip {
         Some(ip) => ip,
         None => local_ip().expect("Server don't have network interface"),
     };
     let address = (ip, PORT);
-    info!("Server is listening on address: {address:?}");
-    let listener = TcpListener::bind(address).expect("Binding should be available");
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                let peer_ip = stream.peer_addr().unwrap().ip();
-                info!("New peer address: {}", peer_ip);
-                clients.entry(peer_ip).or_insert(ClientInfo {
-                    download_file_info: None,
-                    upload_file_info: None,
-                    operation: CurrentOperation::None,
-                });
-                handle_stream(stream, &mut clients, peer_ip).unwrap_or_else(|error| {
-                    error!("Socket error: {error}");
-                });
+
+    match protocol {
+        Protocol::Tcp => {
+            let listener = TcpListener::bind(address).expect("Binding should be available");
+            info!("Server is listening on address: {address:?}");
+
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(stream) => {
+                        let peer_ip = stream.peer_addr().unwrap().ip();
+                        info!("New peer IP: {}", peer_ip);
+
+                        clients.entry(peer_ip).or_insert(ClientInfo {
+                            download_file_info: None,
+                            upload_file_info: None,
+                            operation: CurrentOperation::None,
+                        });
+                        handle_connection(&mut Transport::Tcp(stream), &mut clients, peer_ip)
+                            .unwrap_or_else(|error| {
+                                error!("Connection error: {error}");
+                            });
+                    }
+                    Err(error) => error!("TCP stream error: {error}"),
+                }
             }
-            Err(error) => error!("TCP stream error: {error}"),
+        }
+        Protocol::Udp => {
+            let mut transport =
+                Transport::Udp(UdpSocket::bind(address).expect("Binding should be available"));
+            info!("Server bind on address: {address:?}");
+
+            loop {
+                match read_command(&mut transport) {
+                    Ok(command) => match command {
+                        Command::Echo(payload) => {
+                            let message = str::from_utf8(&payload).unwrap().trim_end_matches('\0');
+                            let peer_address = message.parse::<SocketAddr>().unwrap();
+                            if let Transport::Udp(socket) = &transport {
+                                socket
+                                    .connect(peer_address)
+                                    .expect("Failed to connect to {peer_address}");
+                            }
+                            let peer_ip = peer_address.ip();
+
+                            info!("New peer IP: {}", peer_ip);
+                            clients.entry(peer_ip).or_insert(ClientInfo {
+                                download_file_info: None,
+                                upload_file_info: None,
+                                operation: CurrentOperation::None,
+                            });
+                            handle_connection(&mut transport, &mut clients, peer_ip)
+                                .unwrap_or_else(|error| {
+                                    error!("Connection error: {error}");
+                                });
+                        }
+                        _ => {
+                            error!("Unexpected command: {command}")
+                        }
+                    },
+                    Err(error) => error!("UDP socket error: {error}"),
+                }
+            }
         }
     }
 }
 
-fn handle_stream(
-    mut stream: TcpStream,
+fn handle_connection(
+    transport: &mut Transport,
     clients: &mut HashMap<IpAddr, ClientInfo>,
     peer_ip: IpAddr,
-) -> Result<(), std::io::Error> {
+) -> io::Result<()> {
     loop {
-        let command = read_command(&mut stream)?;
+        let command = read_command(transport)?;
         match command {
             Command::Echo(payload) => {
                 let echo_argument = std::str::from_utf8(&payload).unwrap();
@@ -77,10 +123,13 @@ fn handle_stream(
                 let time = Local::now().to_rfc2822();
                 let response =
                     Command::TimeResponse([0; PAYLOAD_SIZE]).fill_payload(time.as_bytes());
-                write_command(&mut stream, response)?;
+                write_command(transport, response)?;
             }
             Command::Close => {
-                stream.shutdown(Shutdown::Both)?;
+                match transport {
+                    Transport::Tcp(stream) => stream.shutdown(Shutdown::Both)?,
+                    Transport::Udp(_) => {}
+                }
                 return Ok(());
             }
             Command::DownloadRequest(payload) => {
@@ -89,7 +138,7 @@ fn handle_stream(
                     .trim_end_matches('\0');
                 match &clients.get(&peer_ip).unwrap().download_file_info {
                     Some(file_info) if file_info.name == file_name => {
-                        write_command(&mut stream, Command::LoadResumeAvailable)?;
+                        write_command(transport, Command::LoadResumeAvailable)?;
                     }
                     _ => {
                         match fs::File::open(file_name) {
@@ -104,11 +153,11 @@ fn handle_stream(
                                         content,
                                     })
                                 });
-                                write_command(&mut stream, Command::FirstBlockToLoad(0))?;
+                                write_command(transport, Command::FirstBlockToLoad(0))?;
                             }
                             Err(error) => {
                                 error!("Failed to open \"{file_name}\": {error}");
-                                write_command(&mut stream, Command::FileNotExist)?;
+                                write_command(transport, Command::FileNotExist)?;
                             }
                         };
                     }
@@ -120,7 +169,7 @@ fn handle_stream(
                     .trim_end_matches('\0');
                 match &clients.get(&peer_ip).unwrap().upload_file_info {
                     Some(file_info) if file_info.name == file_name => {
-                        write_command(&mut stream, Command::LoadResumeAvailable)?
+                        write_command(transport, Command::LoadResumeAvailable)?
                     }
                     _ => {
                         clients.entry(peer_ip).and_modify(|peer| {
@@ -131,7 +180,7 @@ fn handle_stream(
                                 content: Vec::new(),
                             })
                         });
-                        write_command(&mut stream, Command::FirstBlockToLoad(0))?;
+                        write_command(transport, Command::FirstBlockToLoad(0))?;
                     }
                 }
             }
@@ -148,7 +197,7 @@ fn handle_stream(
                     file_info.last_block_id = 0;
                 }
                 write_command(
-                    &mut stream,
+                    transport,
                     Command::FirstBlockToLoad(file_info.last_block_id),
                 )?;
             }
@@ -164,10 +213,10 @@ fn handle_stream(
                         let block = &file_info.content[begin..end];
                         let response = Command::Load(file_info.last_block_id, [0; PAYLOAD_SIZE])
                             .fill_payload(block);
-                        write_command(&mut stream, response)?;
+                        write_command(transport, response)?;
                     }
                     CurrentOperation::Upload => {
-                        write_command(&mut stream, Command::FirstBlockToLoadAcknowledgement)?;
+                        write_command(transport, Command::FirstBlockToLoadAcknowledgement)?;
                     }
                     CurrentOperation::None => panic!("Invalid state"),
                 };
@@ -187,7 +236,7 @@ fn handle_stream(
                     file.write_all_at(&payload, offset)?;
                     file.sync_data()?;
                     write_command(
-                        &mut stream,
+                        transport,
                         Command::LoadAcknowledgement(file_info.last_block_id),
                     )?;
                     file_info.last_block_id += 1;
@@ -206,7 +255,7 @@ fn handle_stream(
                             let begin = file_info.last_block_id * PAYLOAD_SIZE;
                             if begin > file_info.content.len() {
                                 write_command(
-                                    &mut stream,
+                                    transport,
                                     Command::LoadFinish(file_info.content.len()),
                                 )?;
                                 clients.entry(peer_ip).and_modify(|peer| {
@@ -220,7 +269,7 @@ fn handle_stream(
                                 let response =
                                     Command::Load(file_info.last_block_id, [0; PAYLOAD_SIZE])
                                         .fill_payload(block);
-                                write_command(&mut stream, response)?;
+                                write_command(transport, response)?;
                             }
                         }
                     }

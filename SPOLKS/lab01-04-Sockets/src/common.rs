@@ -1,8 +1,8 @@
 use std::{
     fmt,
-    io::{Read, Write},
+    io::{self, Read, Write},
     mem::MaybeUninit,
-    net::TcpStream,
+    net::{TcpStream, UdpSocket},
     str,
 };
 
@@ -38,6 +38,11 @@ pub enum Protocol {
     Tcp,
     /// Use UDP protocol
     Udp,
+}
+
+pub enum Transport {
+    Tcp(TcpStream),
+    Udp(UdpSocket),
 }
 
 pub const PORT: u16 = 6996;
@@ -109,6 +114,7 @@ impl Command {
     }
 }
 
+#[derive(Debug)]
 pub struct CommandParseError(String);
 
 impl fmt::Display for CommandParseError {
@@ -197,17 +203,28 @@ pub fn get_memory_mut<T>(input: &mut T) -> &mut [u8] {
     unsafe { std::slice::from_raw_parts_mut(input as *mut _ as *mut u8, std::mem::size_of::<T>()) }
 }
 
-pub fn read_command(stream: &mut TcpStream) -> Result<Command, std::io::Error> {
+pub fn read_command(transport: &mut Transport) -> io::Result<Command> {
     let mut command: MaybeUninit<Command> = MaybeUninit::uninit();
     let raw_buffer = get_memory_mut(&mut command);
-    stream.read_exact(raw_buffer)?;
+    match transport {
+        Transport::Tcp(stream) => stream.read_exact(raw_buffer)?,
+        Transport::Udp(socket) => {
+            socket.recv(raw_buffer)?;
+        }
+    }
     let command = unsafe { command.assume_init() };
     info!("Read command: {command}");
     Ok(command)
 }
 
-pub fn write_command(stream: &mut TcpStream, command: Command) -> Result<(), std::io::Error> {
+pub fn write_command(transport: &mut Transport, command: Command) -> io::Result<()> {
     info!("Write command: {command}");
     let raw_buffer = get_memory(&command);
-    stream.write_all(raw_buffer)
+    match transport {
+        Transport::Tcp(stream) => stream.write_all(raw_buffer)?,
+        Transport::Udp(socket) => {
+            socket.send(raw_buffer)?;
+        }
+    }
+    Ok(())
 }
