@@ -4,6 +4,7 @@ use std::{
     mem::MaybeUninit,
     net::{TcpStream, UdpSocket},
     str,
+    time::Duration,
 };
 
 pub use clap::{Parser, ValueEnum};
@@ -48,6 +49,7 @@ pub enum Transport {
 pub const PORT: u16 = 6996;
 pub const PAYLOAD_SIZE: usize = 1024;
 pub const FILE_NAME_SIZE: usize = 256;
+pub const TIMEOUT: Duration = Duration::new(30, 0);
 
 pub type Payload = [u8; PAYLOAD_SIZE];
 pub type FileName = [u8; FILE_NAME_SIZE];

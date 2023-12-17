@@ -1,8 +1,7 @@
-use std::{net::IpAddr, process::exit};
+use std::{net::IpAddr, process::exit, time::Duration};
 
 use common::*;
 use log::{error, info};
-
 mod client;
 mod common;
 mod server;
@@ -25,7 +24,12 @@ fn main() {
     let server_ip: Option<IpAddr> =
         server_ip.map(|ip| ip.parse().expect("Invalid IP format: {ip}"));
     match mode {
-        Mode::Server => server::run(protocol, server_ip),
+        Mode::Server => {
+            server::run(protocol.clone(), server_ip);
+            loop {
+                std::thread::sleep(Duration::new(10, 0));
+            }
+        }
         Mode::Client => client::run(protocol, server_ip.unwrap()),
     };
 }

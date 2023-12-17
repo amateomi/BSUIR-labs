@@ -4,10 +4,12 @@ use std::{
     io::{self, Read},
     net::{IpAddr, Shutdown, SocketAddr, TcpListener, UdpSocket},
     os::unix::fs::FileExt,
+    process::exit,
     str,
 };
 
 use chrono::Local;
+use fork::{fork, Fork};
 use local_ip_address::local_ip;
 use log::{error, info};
 
@@ -47,10 +49,68 @@ pub fn run(protocol: Protocol, ip: Option<IpAddr>) {
             let listener = TcpListener::bind(address).expect("Binding should be available");
             info!("Server is listening on address: {address:?}");
 
-            for stream in listener.incoming() {
-                match stream {
-                    Ok(stream) => {
-                        let peer_ip = stream.peer_addr().unwrap().ip();
+            for _ in 0..2 {
+                match fork() {
+                    Ok(Fork::Parent(_)) => {}
+                    Ok(Fork::Child) => {
+                        for stream in listener.incoming() {
+                            match stream {
+                                Ok(stream) => {
+                                    stream
+                                        .set_read_timeout(Some(TIMEOUT))
+                                        .expect("Failed to set read timeout");
+                                    stream
+                                        .set_write_timeout(Some(TIMEOUT))
+                                        .expect("Failed to set write timeout");
+
+                                    let peer_ip = stream.peer_addr().unwrap().ip();
+                                    info!("New peer IP: {}", peer_ip);
+
+                                    clients.entry(peer_ip).or_insert(ClientInfo {
+                                        download_file_info: None,
+                                        upload_file_info: None,
+                                        operation: CurrentOperation::None,
+                                    });
+                                    handle_connection(
+                                        &mut Transport::Tcp(stream),
+                                        &mut clients,
+                                        peer_ip,
+                                    )
+                                    .unwrap_or_else(|error| {
+                                        error!("Connection error: {error}");
+                                    });
+                                }
+                                Err(error) => error!("TCP stream error: {error}"),
+                            }
+                        }
+                        exit(0);
+                    }
+                    Err(error) => error!("Failed to create child process: {error}"),
+                }
+            }
+        }
+        Protocol::Udp => loop {
+            let mut transport =
+                Transport::Udp(UdpSocket::bind(address).expect("Binding should be available"));
+            info!("Server bind on address: {address:?}");
+
+            match read_command(&mut transport) {
+                Ok(command) => match command {
+                    Command::Echo(payload) => {
+                        let message = str::from_utf8(&payload).unwrap().trim_end_matches('\0');
+                        let peer_address = message.parse::<SocketAddr>().unwrap();
+                        if let Transport::Udp(socket) = &transport {
+                            socket
+                                .connect(peer_address)
+                                .expect("Failed to connect to {peer_address}");
+                            socket
+                                .set_read_timeout(Some(TIMEOUT))
+                                .expect("Failed to set read timeout");
+                            socket
+                                .set_write_timeout(Some(TIMEOUT))
+                                .expect("Failed to set write timeout");
+                        }
+                        let peer_ip = peer_address.ip();
                         info!("New peer IP: {}", peer_ip);
 
                         clients.entry(peer_ip).or_insert(ClientInfo {
@@ -58,52 +118,20 @@ pub fn run(protocol: Protocol, ip: Option<IpAddr>) {
                             upload_file_info: None,
                             operation: CurrentOperation::None,
                         });
-                        handle_connection(&mut Transport::Tcp(stream), &mut clients, peer_ip)
-                            .unwrap_or_else(|error| {
+                        handle_connection(&mut transport, &mut clients, peer_ip).unwrap_or_else(
+                            |error| {
                                 error!("Connection error: {error}");
-                            });
+                                drop(transport);
+                            },
+                        );
                     }
-                    Err(error) => error!("TCP stream error: {error}"),
-                }
+                    _ => {
+                        error!("Unexpected command: {command}")
+                    }
+                },
+                Err(error) => error!("UDP socket error: {error}"),
             }
-        }
-        Protocol::Udp => {
-            let mut transport =
-                Transport::Udp(UdpSocket::bind(address).expect("Binding should be available"));
-            info!("Server bind on address: {address:?}");
-
-            loop {
-                match read_command(&mut transport) {
-                    Ok(command) => match command {
-                        Command::Echo(payload) => {
-                            let message = str::from_utf8(&payload).unwrap().trim_end_matches('\0');
-                            let peer_address = message.parse::<SocketAddr>().unwrap();
-                            if let Transport::Udp(socket) = &transport {
-                                socket
-                                    .connect(peer_address)
-                                    .expect("Failed to connect to {peer_address}");
-                            }
-                            let peer_ip = peer_address.ip();
-
-                            info!("New peer IP: {}", peer_ip);
-                            clients.entry(peer_ip).or_insert(ClientInfo {
-                                download_file_info: None,
-                                upload_file_info: None,
-                                operation: CurrentOperation::None,
-                            });
-                            handle_connection(&mut transport, &mut clients, peer_ip)
-                                .unwrap_or_else(|error| {
-                                    error!("Connection error: {error}");
-                                });
-                        }
-                        _ => {
-                            error!("Unexpected command: {command}")
-                        }
-                    },
-                    Err(error) => error!("UDP socket error: {error}"),
-                }
-            }
-        }
+        },
     }
 }
 
