@@ -7,7 +7,7 @@ use rand::{
     Rng,
 };
 
-const MATRIX_SIZE: usize = 1000;
+const MATRIX_SIZE: usize = 2_000;
 
 fn main() {
     let mut context = Context::default();
@@ -16,7 +16,8 @@ fn main() {
 
 struct Context {
     universe: Universe,
-    rows_per_slave_count: usize,
+    slave_count: usize,
+    rows_per_slave: usize,
     x: Matrix<f64, MATRIX_SIZE>,
     y: Matrix<f64, MATRIX_SIZE>,
     z: Matrix<f64, MATRIX_SIZE>,
@@ -47,7 +48,8 @@ impl Default for Context {
 
         Self {
             universe,
-            rows_per_slave_count,
+            slave_count,
+            rows_per_slave: rows_per_slave_count,
             x,
             y,
             z: Matrix::<f64, MATRIX_SIZE>::default(),
@@ -58,14 +60,19 @@ impl Default for Context {
 impl Context {
     fn run(&mut self) {
         if self.universe.world().rank() == 0 {
+            let start_time = mpi::time();
             self.run_master();
+            let end_time = mpi::time();
+            println!("Elapsed time: {:.3}sec", end_time - start_time);
         } else {
             self.run_slave();
         }
     }
 
+    #[cfg(mpi_exec_mode = "sync")]
     fn run_master(&mut self) {
         let world = self.universe.world();
+
         for rank in 1..world.size() {
             let start_index = (rank - 1) as usize * self.rows_per_slave_count * MATRIX_SIZE;
             let end_index = start_index + self.rows_per_slave_count * MATRIX_SIZE;
@@ -83,16 +90,73 @@ impl Context {
                 .process_at_rank(rank)
                 .receive_into(&mut self.z.data[range]);
         }
-        dbg!(&self.x);
-        dbg!(&self.y);
-        dbg!(&self.z);
     }
 
+    #[cfg(mpi_exec_mode = "async")]
+    fn run_master(&mut self) {
+        let world = self.universe.world();
+
+        let mut slave_computations = vec![vec![0.0; MATRIX_SIZE]; self.slave_count];
+
+        mpi::request::multiple_scope(3 * self.slave_count, |scope, requests| {
+            for rank in 1..world.size() {
+                let start_index = (rank - 1) as usize * self.rows_per_slave * MATRIX_SIZE;
+                let end_index = start_index + self.rows_per_slave * MATRIX_SIZE;
+                let range = start_index..end_index;
+
+                requests.add(
+                    world
+                        .process_at_rank(rank)
+                        .immediate_send(scope, &self.x.data[range]),
+                );
+                requests.add(
+                    world
+                        .process_at_rank(rank)
+                        .immediate_send(scope, &self.y.data),
+                );
+            }
+            for (i, computation) in slave_computations.iter_mut().enumerate() {
+                let rank = (i + 1) as mpi::Rank;
+                requests.add(
+                    world
+                        .process_at_rank(rank)
+                        .immediate_receive_into(scope, computation),
+                );
+            }
+        })
+    }
+
+    #[cfg(mpi_exec_mode = "sync")]
     fn run_slave(&mut self) {
         let world = self.universe.world();
 
         let start_index = (world.rank() - 1) as usize * self.rows_per_slave_count * MATRIX_SIZE;
         let end_index = start_index + self.rows_per_slave_count * MATRIX_SIZE;
+        let range = start_index..end_index;
+
+        world
+            .process_at_rank(0)
+            .receive_into(&mut self.x.data[range.clone()]);
+
+        world.process_at_rank(0).receive_into(&mut self.y.data);
+
+        for z_index in range.clone() {
+            for i in 0..MATRIX_SIZE {
+                let x_index = (z_index / MATRIX_SIZE) * MATRIX_SIZE + i;
+                let y_index = (z_index % MATRIX_SIZE) + i * MATRIX_SIZE;
+                self.z.data[z_index] += self.x.data[x_index] * self.y.data[y_index];
+            }
+        }
+
+        world.process_at_rank(0).send(&self.z.data[range]);
+    }
+
+    #[cfg(mpi_exec_mode = "async")]
+    fn run_slave(&mut self) {
+        let world = self.universe.world();
+
+        let start_index = (world.rank() - 1) as usize * self.rows_per_slave * MATRIX_SIZE;
+        let end_index = start_index + self.rows_per_slave * MATRIX_SIZE;
         let range = start_index..end_index;
 
         world
