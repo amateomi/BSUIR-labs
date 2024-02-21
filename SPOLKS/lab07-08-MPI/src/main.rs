@@ -7,7 +7,7 @@ use rand::{
     Rng,
 };
 
-const MATRIX_SIZE: usize = 2_000;
+const MATRIX_SIZE: usize = 4_000;
 
 fn main() {
     let mut context = Context::default();
@@ -74,16 +74,16 @@ impl Context {
         let world = self.universe.world();
 
         for rank in 1..world.size() {
-            let start_index = (rank - 1) as usize * self.rows_per_slave_count * MATRIX_SIZE;
-            let end_index = start_index + self.rows_per_slave_count * MATRIX_SIZE;
+            let start_index = (rank - 1) as usize * self.rows_per_slave * MATRIX_SIZE;
+            let end_index = start_index + self.rows_per_slave * MATRIX_SIZE;
             let range = start_index..end_index;
 
             world.process_at_rank(rank).send(&self.x.data[range]);
             world.process_at_rank(rank).send(&self.y.data);
         }
         for rank in 1..world.size() {
-            let start_index = (rank - 1) as usize * self.rows_per_slave_count * MATRIX_SIZE;
-            let end_index = start_index + self.rows_per_slave_count * MATRIX_SIZE;
+            let start_index = (rank - 1) as usize * self.rows_per_slave * MATRIX_SIZE;
+            let end_index = start_index + self.rows_per_slave * MATRIX_SIZE;
             let range = start_index..end_index;
 
             world
@@ -96,7 +96,8 @@ impl Context {
     fn run_master(&mut self) {
         let world = self.universe.world();
 
-        let mut slave_computations = vec![vec![0.0; MATRIX_SIZE]; self.slave_count];
+        let mut slave_computations =
+            vec![vec![0.0; self.rows_per_slave * MATRIX_SIZE]; self.slave_count];
 
         mpi::request::multiple_scope(3 * self.slave_count, |scope, requests| {
             for rank in 1..world.size() {
@@ -123,35 +124,20 @@ impl Context {
                         .immediate_receive_into(scope, computation),
                 );
             }
-        })
+            let mut result = vec![];
+            requests.wait_all(&mut result);
+        });
+
+        for (i, computation) in slave_computations.iter().enumerate() {
+            let start_index = i * self.rows_per_slave * MATRIX_SIZE;
+            let end_index = start_index + self.rows_per_slave * MATRIX_SIZE;
+            let range = start_index..end_index;
+
+            self.z.data[range].copy_from_slice(computation);
+        }
     }
 
     #[cfg(mpi_exec_mode = "sync")]
-    fn run_slave(&mut self) {
-        let world = self.universe.world();
-
-        let start_index = (world.rank() - 1) as usize * self.rows_per_slave_count * MATRIX_SIZE;
-        let end_index = start_index + self.rows_per_slave_count * MATRIX_SIZE;
-        let range = start_index..end_index;
-
-        world
-            .process_at_rank(0)
-            .receive_into(&mut self.x.data[range.clone()]);
-
-        world.process_at_rank(0).receive_into(&mut self.y.data);
-
-        for z_index in range.clone() {
-            for i in 0..MATRIX_SIZE {
-                let x_index = (z_index / MATRIX_SIZE) * MATRIX_SIZE + i;
-                let y_index = (z_index % MATRIX_SIZE) + i * MATRIX_SIZE;
-                self.z.data[z_index] += self.x.data[x_index] * self.y.data[y_index];
-            }
-        }
-
-        world.process_at_rank(0).send(&self.z.data[range]);
-    }
-
-    #[cfg(mpi_exec_mode = "async")]
     fn run_slave(&mut self) {
         let world = self.universe.world();
 
@@ -174,6 +160,48 @@ impl Context {
         }
 
         world.process_at_rank(0).send(&self.z.data[range]);
+    }
+
+    #[cfg(mpi_exec_mode = "async")]
+    fn run_slave(&mut self) {
+        use mpi::request::WaitGuard;
+
+        let world = self.universe.world();
+
+        let start_index = (world.rank() - 1) as usize * self.rows_per_slave * MATRIX_SIZE;
+        let end_index = start_index + self.rows_per_slave * MATRIX_SIZE;
+        let range = start_index..end_index;
+
+        mpi::request::multiple_scope(3 * self.slave_count, |scope, requests| {
+            requests.add(
+                world
+                    .process_at_rank(0)
+                    .immediate_receive_into(scope, &mut self.x.data[range.clone()]),
+            );
+            requests.add(
+                world
+                    .process_at_rank(0)
+                    .immediate_receive_into(scope, &mut self.y.data),
+            );
+            let mut result = vec![];
+            requests.wait_all(&mut result);
+        });
+
+        for z_index in range.clone() {
+            for i in 0..MATRIX_SIZE {
+                let x_index = (z_index / MATRIX_SIZE) * MATRIX_SIZE + i;
+                let y_index = (z_index % MATRIX_SIZE) + i * MATRIX_SIZE;
+                self.z.data[z_index] += self.x.data[x_index] * self.y.data[y_index];
+            }
+        }
+
+        mpi::request::scope(|scope| {
+            let _waiter = WaitGuard::from(
+                world
+                    .process_at_rank(0)
+                    .immediate_send(scope, &self.z.data[range]),
+            );
+        })
     }
 }
 
