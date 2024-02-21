@@ -7,7 +7,7 @@ use rand::{
     Rng,
 };
 
-const MATRIX_SIZE: usize = 4_000;
+const MATRIX_SIZE: usize = 20;
 
 fn main() {
     let mut context = Context::default();
@@ -35,7 +35,7 @@ impl Default for Context {
             eprintln!("slave_count={slave_count} must be devisor of matrix_size={MATRIX_SIZE}, but now division remainder={remainder}");
             world.abort(1);
         }
-        let rows_per_slave_count = MATRIX_SIZE / slave_count;
+        let rows_per_slave = MATRIX_SIZE / slave_count;
 
         let (x, y) = if world.rank() == 0 {
             (
@@ -49,7 +49,7 @@ impl Default for Context {
         Self {
             universe,
             slave_count,
-            rows_per_slave: rows_per_slave_count,
+            rows_per_slave,
             x,
             y,
             z: Matrix::<f64, MATRIX_SIZE>::default(),
@@ -64,6 +64,7 @@ impl Context {
             self.run_master();
             let end_time = mpi::time();
             println!("Elapsed time: {:.3}sec", end_time - start_time);
+            dbg!(&self.z);
         } else {
             self.run_slave();
         }
@@ -73,23 +74,54 @@ impl Context {
     fn run_master(&mut self) {
         let world = self.universe.world();
 
-        for rank in 1..world.size() {
-            let start_index = (rank - 1) as usize * self.rows_per_slave * MATRIX_SIZE;
-            let end_index = start_index + self.rows_per_slave * MATRIX_SIZE;
-            let range = start_index..end_index;
+        let chunk_size = self.rows_per_slave * MATRIX_SIZE;
 
-            world.process_at_rank(rank).send(&self.x.data[range]);
+        for (i, chunk) in self.x.data.chunks_exact(chunk_size).enumerate() {
+            let rank = (i + 1) as mpi::Rank;
+            world.process_at_rank(rank).send(chunk);
             world.process_at_rank(rank).send(&self.y.data);
         }
-        for rank in 1..world.size() {
-            let start_index = (rank - 1) as usize * self.rows_per_slave * MATRIX_SIZE;
-            let end_index = start_index + self.rows_per_slave * MATRIX_SIZE;
-            let range = start_index..end_index;
 
-            world
-                .process_at_rank(rank)
-                .receive_into(&mut self.z.data[range]);
+        // Slaves computation
+
+        for (i, chunk) in self.z.data.chunks_exact_mut(chunk_size).enumerate() {
+            let rank = (i + 1) as mpi::Rank;
+            world.process_at_rank(rank).receive_into(chunk);
         }
+    }
+
+    #[cfg(mpi_exec_mode = "sync")]
+    fn run_slave(&mut self) {
+        let world = self.universe.world();
+
+        let chunk_size = self.rows_per_slave * MATRIX_SIZE;
+        let chunk_index = (world.rank() - 1) as usize;
+
+        let x_chunk = self
+            .x
+            .data
+            .chunks_exact_mut(chunk_size)
+            .nth(chunk_index)
+            .unwrap();
+        let z_chunk = self
+            .z
+            .data
+            .chunks_exact_mut(chunk_size)
+            .nth(chunk_index)
+            .unwrap();
+
+        world.process_at_rank(0).receive_into(x_chunk);
+        world.process_at_rank(0).receive_into(&mut self.y.data);
+
+        let cool_iter = x_chunk
+            .iter()
+            .zip(self.y.data.iter().step_by(MATRIX_SIZE))
+            .zip(z_chunk.iter_mut());
+        for ((x, y), z) in cool_iter {
+            *z += *x * *y;
+        }
+
+        world.process_at_rank(0).send(z_chunk);
     }
 
     #[cfg(mpi_exec_mode = "async")]
@@ -135,31 +167,6 @@ impl Context {
 
             self.z.data[range].copy_from_slice(computation);
         }
-    }
-
-    #[cfg(mpi_exec_mode = "sync")]
-    fn run_slave(&mut self) {
-        let world = self.universe.world();
-
-        let start_index = (world.rank() - 1) as usize * self.rows_per_slave * MATRIX_SIZE;
-        let end_index = start_index + self.rows_per_slave * MATRIX_SIZE;
-        let range = start_index..end_index;
-
-        world
-            .process_at_rank(0)
-            .receive_into(&mut self.x.data[range.clone()]);
-
-        world.process_at_rank(0).receive_into(&mut self.y.data);
-
-        for z_index in range.clone() {
-            for i in 0..MATRIX_SIZE {
-                let x_index = (z_index / MATRIX_SIZE) * MATRIX_SIZE + i;
-                let y_index = (z_index % MATRIX_SIZE) + i * MATRIX_SIZE;
-                self.z.data[z_index] += self.x.data[x_index] * self.y.data[y_index];
-            }
-        }
-
-        world.process_at_rank(0).send(&self.z.data[range]);
     }
 
     #[cfg(mpi_exec_mode = "async")]
