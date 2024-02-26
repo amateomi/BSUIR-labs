@@ -1,3 +1,5 @@
 [build]
 # rustflags = ["--cfg", "mpi_exec_mode=\"sync\""]
-rustflags = ["--cfg", "mpi_exec_mode=\"async\""]
+# rustflags = ["--cfg", "mpi_exec_mode=\"async\""]
+# rustflags = ["--cfg", "mpi_exec_mode=\"collective\""]
+rustflags = ["--cfg", "mpi_exec_mode=\"file\""]

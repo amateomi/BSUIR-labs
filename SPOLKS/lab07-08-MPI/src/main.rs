@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, io::Write};
 
 use mpi::{
     environment::Universe,
@@ -12,7 +12,7 @@ use rand::{
     Rng, SeedableRng,
 };
 
-const MATRIX_SIZE: usize = 480 << 2;
+const MATRIX_SIZE: usize = 12;
 
 fn main() {
     let mut context = Context::default();
@@ -69,7 +69,7 @@ impl Default for Context {
             } else {
                 ungrouped_workers.len() - grouped_workers_count
             };
-            
+
             let start = grouped_workers_count as Rank;
             let end = ungrouped_workers.len().min(grouped_workers_count + workers_count) as Rank;
             grouped_workers_count += workers_count;
@@ -78,7 +78,11 @@ impl Default for Context {
             let id = world.group().include(&ranks_to_include);
             let communicator = world.split_by_subgroup_collective(&id);
 
-            let slave_count = ranks_to_include.len() - 1;
+            let mut slave_count = ranks_to_include.len() - 1;
+            if cfg!(mpi_exec_mode = "collective") || cfg!(mpi_exec_mode = "file") {
+                // In this modes masters are also part of computation
+                slave_count += 1;
+            };
             let remainder = MATRIX_SIZE % slave_count;
             if remainder != 0 {
                 eprintln!("slave_count={slave_count} must be devisor of matrix_size={MATRIX_SIZE}, but now division remainder={remainder}");
@@ -266,6 +270,170 @@ impl Context {
                     .immediate_send(scope, &self.z.data[range]),
             );
         })
+    }
+
+    #[cfg(mpi_exec_mode = "collective")]
+    fn run_master(&mut self, group_index: usize) {
+        use mpi::traits::Root;
+
+        let communicator = self.groups[group_index].communicator.as_ref().unwrap();
+        let master_process = communicator.process_at_rank(0);
+
+        let chunk_size = self.groups[group_index].rows_per_slave * MATRIX_SIZE;
+
+        master_process.broadcast_into(&mut self.y.data);
+
+        let mut chunk = vec![0.0; chunk_size];
+        master_process.scatter_into_root(&self.x.data, &mut chunk);
+        self.x
+            .data
+            .chunks_exact_mut(chunk_size)
+            .nth(0)
+            .unwrap()
+            .copy_from_slice(&chunk);
+
+        for (index, z) in chunk.iter_mut().enumerate().take(chunk_size) {
+            for i in 0..MATRIX_SIZE {
+                let x_index = index / MATRIX_SIZE * MATRIX_SIZE + i;
+                let y_index = index % MATRIX_SIZE + i * MATRIX_SIZE;
+                *z += self.x.data[x_index] * self.y.data[y_index];
+            }
+        }
+
+        master_process.gather_into_root(&chunk, &mut self.z.data);
+    }
+
+    #[cfg(mpi_exec_mode = "collective")]
+    fn run_slave(&mut self, group_index: usize) {
+        use mpi::traits::Root;
+
+        let communicator = self.groups[group_index].communicator.as_ref().unwrap();
+        let master_process = communicator.process_at_rank(0);
+
+        let chunk_size = self.groups[group_index].rows_per_slave * MATRIX_SIZE;
+
+        master_process.broadcast_into(&mut self.y.data);
+
+        let rank = communicator.rank() as usize;
+        let chunk = self.x.data.chunks_exact_mut(chunk_size).nth(rank).unwrap();
+        master_process.scatter_into(chunk);
+
+        let start_index = (rank) * chunk_size;
+        let end_index = start_index + chunk_size;
+        let range = start_index..end_index;
+
+        for z_index in range {
+            for i in 0..MATRIX_SIZE {
+                let x_index = z_index / MATRIX_SIZE * MATRIX_SIZE + i;
+                let y_index = z_index % MATRIX_SIZE + i * MATRIX_SIZE;
+                self.z.data[z_index] += self.x.data[x_index] * self.y.data[y_index];
+            }
+        }
+
+        let chunk = self.z.data.chunks_exact_mut(chunk_size).nth(rank).unwrap();
+        master_process.gather_into(chunk);
+    }
+
+    #[cfg(mpi_exec_mode = "file")]
+    fn run_master(&mut self, group_index: usize) {
+        use std::{
+            alloc::{alloc, Layout},
+            ffi::{c_int, CString},
+            mem, ptr,
+        };
+
+        use mpi::{
+            ffi::{
+                MPI_File, MPI_File_close, MPI_File_open, MPI_File_write_all, MPI_Status,
+                MPI_MODE_CREATE, MPI_MODE_WRONLY, MPI_SUCCESS, RSMPI_DOUBLE, RSMPI_INFO_NULL,
+            },
+            raw::AsRaw,
+            traits::Collection,
+        };
+
+        let communicator = self.groups[group_index].communicator.as_ref().unwrap();
+
+        unsafe {
+            let x_file = CString::new(format!("x_{group_index}")).unwrap();
+            let mut file_handle: MPI_File = alloc(Layout::new::<MPI_File>()).cast();
+            if MPI_File_open(
+                communicator.as_raw(),
+                x_file.as_ptr(),
+                (MPI_MODE_CREATE | MPI_MODE_WRONLY) as c_int,
+                RSMPI_INFO_NULL,
+                ptr::addr_of_mut!(file_handle),
+            ) as u32
+                != MPI_SUCCESS
+            {
+                panic!("Group {group_index} failed to open file x");
+            }
+            let mut status: MPI_Status = mem::zeroed();
+            if MPI_File_write_all(
+                file_handle,
+                self.x.data.as_ptr().cast(),
+                self.x.data.count(),
+                RSMPI_DOUBLE,
+                ptr::addr_of_mut!(status),
+            ) as u32
+                != MPI_SUCCESS
+            {
+                panic!("Group {group_index} failed to write file x");
+            }
+            if MPI_File_close(ptr::addr_of_mut!(file_handle)) as u32 != MPI_SUCCESS {
+                panic!("Group {group_index} failed to close file x");
+            }
+        };
+    }
+
+    #[cfg(mpi_exec_mode = "file")]
+    fn run_slave(&mut self, group_index: usize) {
+        use std::{
+            alloc::{alloc, Layout},
+            ffi::{c_int, CString},
+            mem, ptr,
+        };
+
+        use mpi::{
+            ffi::{
+                MPI_File, MPI_File_close, MPI_File_open, MPI_File_write_all, MPI_Status,
+                MPI_MODE_CREATE, MPI_MODE_WRONLY, MPI_SUCCESS, RSMPI_DOUBLE, RSMPI_INFO_NULL,
+            },
+            raw::AsRaw,
+            traits::{AsCommunicator, Collection},
+        };
+
+        let communicator = self.groups[group_index].communicator.as_ref().unwrap();
+
+        unsafe {
+            let x_file = CString::new(format!("x_{group_index}")).unwrap();
+            let mut file_handle: MPI_File = alloc(Layout::new::<MPI_File>()).cast();
+            if MPI_File_open(
+                communicator.as_raw(),
+                x_file.as_ptr(),
+                (MPI_MODE_CREATE | MPI_MODE_WRONLY) as c_int,
+                RSMPI_INFO_NULL,
+                ptr::addr_of_mut!(file_handle),
+            ) as u32
+                != MPI_SUCCESS
+            {
+                panic!("Group {group_index} failed to open file x");
+            }
+            let mut status: MPI_Status = mem::zeroed();
+            if MPI_File_write_all(
+                file_handle,
+                self.x.data.as_ptr().cast(),
+                self.x.data.count(),
+                RSMPI_DOUBLE,
+                ptr::addr_of_mut!(status),
+            ) as u32
+                != MPI_SUCCESS
+            {
+                panic!("Group {group_index} failed to write file x");
+            }
+            if MPI_File_close(ptr::addr_of_mut!(file_handle)) as u32 != MPI_SUCCESS {
+                panic!("Group {group_index} failed to close file x");
+            }
+        };
     }
 }
 
