@@ -1,4 +1,4 @@
-use std::{env, io::Write};
+use std::env;
 
 use mpi::{
     environment::Universe,
@@ -12,7 +12,7 @@ use rand::{
     Rng, SeedableRng,
 };
 
-const MATRIX_SIZE: usize = 12;
+const MATRIX_SIZE: usize = 480 * 4;
 
 fn main() {
     let mut context = Context::default();
@@ -318,7 +318,7 @@ impl Context {
         let chunk = self.x.data.chunks_exact_mut(chunk_size).nth(rank).unwrap();
         master_process.scatter_into(chunk);
 
-        let start_index = (rank) * chunk_size;
+        let start_index = rank * chunk_size;
         let end_index = start_index + chunk_size;
         let range = start_index..end_index;
 
@@ -336,6 +336,16 @@ impl Context {
 
     #[cfg(mpi_exec_mode = "file")]
     fn run_master(&mut self, group_index: usize) {
+        self.run_file(group_index);
+    }
+
+    #[cfg(mpi_exec_mode = "file")]
+    fn run_slave(&mut self, group_index: usize) {
+        self.run_file(group_index);
+    }
+
+    #[cfg(mpi_exec_mode = "file")]
+    fn run_file(&mut self, group_index: usize) {
         use std::{
             alloc::{alloc, Layout},
             ffi::{c_int, CString},
@@ -344,8 +354,9 @@ impl Context {
 
         use mpi::{
             ffi::{
-                MPI_File, MPI_File_close, MPI_File_open, MPI_File_write_all, MPI_Status,
-                MPI_MODE_CREATE, MPI_MODE_WRONLY, MPI_SUCCESS, RSMPI_DOUBLE, RSMPI_INFO_NULL,
+                MPI_File, MPI_File_close, MPI_File_open, MPI_File_read_at_all, MPI_File_write,
+                MPI_File_write_at_all, MPI_Offset, MPI_Status, MPI_MODE_CREATE, MPI_MODE_RDWR,
+                MPI_MODE_WRONLY, MPI_SUCCESS, RSMPI_DOUBLE, RSMPI_INFO_NULL,
             },
             raw::AsRaw,
             traits::Collection,
@@ -353,87 +364,152 @@ impl Context {
 
         let communicator = self.groups[group_index].communicator.as_ref().unwrap();
 
+        let chunk_size = self.groups[group_index].rows_per_slave * MATRIX_SIZE;
+        let rank = communicator.rank() as usize;
+        let offset = (rank * chunk_size * mem::size_of::<f64>()) as MPI_Offset;
+
         unsafe {
             let x_file = CString::new(format!("x_{group_index}")).unwrap();
-            let mut file_handle: MPI_File = alloc(Layout::new::<MPI_File>()).cast();
+            let mut x_file_handle: MPI_File = alloc(Layout::new::<MPI_File>()).cast();
             if MPI_File_open(
                 communicator.as_raw(),
                 x_file.as_ptr(),
-                (MPI_MODE_CREATE | MPI_MODE_WRONLY) as c_int,
+                (MPI_MODE_CREATE | MPI_MODE_RDWR) as c_int,
                 RSMPI_INFO_NULL,
-                ptr::addr_of_mut!(file_handle),
+                ptr::addr_of_mut!(x_file_handle),
             ) as u32
                 != MPI_SUCCESS
             {
                 panic!("Group {group_index} failed to open file x");
             }
             let mut status: MPI_Status = mem::zeroed();
-            if MPI_File_write_all(
-                file_handle,
-                self.x.data.as_ptr().cast(),
-                self.x.data.count(),
+            if rank == 0
+                && MPI_File_write(
+                    x_file_handle,
+                    self.x.data.as_ptr().cast(),
+                    self.x.data.count(),
+                    RSMPI_DOUBLE,
+                    ptr::addr_of_mut!(status),
+                ) as u32
+                    != MPI_SUCCESS
+            {
+                panic!("Group {group_index} failed to write file x");
+            }
+            let chunk = self
+                .x
+                .data
+                .chunks_exact_mut(chunk_size)
+                .nth(communicator.rank() as usize)
+                .unwrap();
+            if MPI_File_read_at_all(
+                x_file_handle,
+                offset,
+                chunk.as_mut_ptr().cast(),
+                chunk_size as c_int,
                 RSMPI_DOUBLE,
                 ptr::addr_of_mut!(status),
             ) as u32
                 != MPI_SUCCESS
             {
-                panic!("Group {group_index} failed to write file x");
+                panic!("Group {group_index} failed to read file x");
             }
-            if MPI_File_close(ptr::addr_of_mut!(file_handle)) as u32 != MPI_SUCCESS {
+            if MPI_File_close(ptr::addr_of_mut!(x_file_handle)) as u32 != MPI_SUCCESS {
                 panic!("Group {group_index} failed to close file x");
             }
-        };
-    }
-
-    #[cfg(mpi_exec_mode = "file")]
-    fn run_slave(&mut self, group_index: usize) {
-        use std::{
-            alloc::{alloc, Layout},
-            ffi::{c_int, CString},
-            mem, ptr,
-        };
-
-        use mpi::{
-            ffi::{
-                MPI_File, MPI_File_close, MPI_File_open, MPI_File_write_all, MPI_Status,
-                MPI_MODE_CREATE, MPI_MODE_WRONLY, MPI_SUCCESS, RSMPI_DOUBLE, RSMPI_INFO_NULL,
-            },
-            raw::AsRaw,
-            traits::{AsCommunicator, Collection},
-        };
-
-        let communicator = self.groups[group_index].communicator.as_ref().unwrap();
-
+        }
         unsafe {
-            let x_file = CString::new(format!("x_{group_index}")).unwrap();
-            let mut file_handle: MPI_File = alloc(Layout::new::<MPI_File>()).cast();
+            let y_file = CString::new(format!("y_{group_index}")).unwrap();
+            let mut y_file_handle: MPI_File = alloc(Layout::new::<MPI_File>()).cast();
             if MPI_File_open(
                 communicator.as_raw(),
-                x_file.as_ptr(),
-                (MPI_MODE_CREATE | MPI_MODE_WRONLY) as c_int,
+                y_file.as_ptr(),
+                (MPI_MODE_CREATE | MPI_MODE_RDWR) as c_int,
                 RSMPI_INFO_NULL,
-                ptr::addr_of_mut!(file_handle),
+                ptr::addr_of_mut!(y_file_handle),
             ) as u32
                 != MPI_SUCCESS
             {
-                panic!("Group {group_index} failed to open file x");
+                panic!("Group {group_index} failed to open file y");
             }
             let mut status: MPI_Status = mem::zeroed();
-            if MPI_File_write_all(
-                file_handle,
-                self.x.data.as_ptr().cast(),
-                self.x.data.count(),
+            if rank == 0
+                && MPI_File_write(
+                    y_file_handle,
+                    self.y.data.as_ptr().cast(),
+                    self.y.data.count(),
+                    RSMPI_DOUBLE,
+                    ptr::addr_of_mut!(status),
+                ) as u32
+                    != MPI_SUCCESS
+            {
+                panic!("Group {group_index} failed to write file y");
+            }
+            if MPI_File_read_at_all(
+                y_file_handle,
+                0,
+                self.y.data.as_mut_ptr().cast(),
+                self.y.data.count(),
                 RSMPI_DOUBLE,
                 ptr::addr_of_mut!(status),
             ) as u32
                 != MPI_SUCCESS
             {
-                panic!("Group {group_index} failed to write file x");
+                panic!("Group {group_index} failed to read file y");
             }
-            if MPI_File_close(ptr::addr_of_mut!(file_handle)) as u32 != MPI_SUCCESS {
-                panic!("Group {group_index} failed to close file x");
+            if MPI_File_close(ptr::addr_of_mut!(y_file_handle)) as u32 != MPI_SUCCESS {
+                panic!("Group {group_index} failed to close file y");
             }
-        };
+        }
+
+        let start_index = rank * chunk_size;
+        let end_index = start_index + chunk_size;
+        let range = start_index..end_index;
+
+        for z_index in range {
+            for i in 0..MATRIX_SIZE {
+                let x_index = z_index / MATRIX_SIZE * MATRIX_SIZE + i;
+                let y_index = z_index % MATRIX_SIZE + i * MATRIX_SIZE;
+                self.z.data[z_index] += self.x.data[x_index] * self.y.data[y_index];
+            }
+        }
+
+        unsafe {
+            let z_file = CString::new(format!("z_{group_index}")).unwrap();
+            let mut z_file_handle: MPI_File = alloc(Layout::new::<MPI_File>()).cast();
+            if MPI_File_open(
+                communicator.as_raw(),
+                z_file.as_ptr(),
+                (MPI_MODE_CREATE | MPI_MODE_WRONLY) as c_int,
+                RSMPI_INFO_NULL,
+                ptr::addr_of_mut!(z_file_handle),
+            ) as u32
+                != MPI_SUCCESS
+            {
+                panic!("Group {group_index} failed to open file z");
+            }
+            let chunk = self
+                .z
+                .data
+                .chunks_exact(chunk_size)
+                .nth(communicator.rank() as usize)
+                .unwrap();
+            let mut status: MPI_Status = mem::zeroed();
+            if MPI_File_write_at_all(
+                z_file_handle,
+                offset,
+                chunk.as_ptr().cast(),
+                chunk_size as c_int,
+                RSMPI_DOUBLE,
+                ptr::addr_of_mut!(status),
+            ) as u32
+                != MPI_SUCCESS
+            {
+                panic!("Group {group_index} failed to write file z");
+            }
+            if MPI_File_close(ptr::addr_of_mut!(z_file_handle)) as u32 != MPI_SUCCESS {
+                panic!("Group {group_index} failed to close file z");
+            }
+        }
     }
 }
 
