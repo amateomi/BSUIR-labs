@@ -1,0 +1,14 @@
+[package]
+name = "lab03_huffman_archiver"
+version = "0.1.0"
+edition = "2021"
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "fat"
+panic = "abort"
+
+[dependencies]
+clap = { version = "4.5.23", features = ["derive"] }
+permutation = "0.4.1"
